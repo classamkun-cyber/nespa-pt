@@ -37,6 +37,12 @@
     margin: 0 0 20px;
     color: #9fb2c7;
   }
+  h1 .ver {
+    font-size: 11px;
+    font-weight: 400;
+    color: #5c6773;
+    margin-left: 6px;
+  }
   label {
     display: block;
     font-size: 12px;
@@ -233,7 +239,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測</h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.11</span></h1>
   <label for="userName">あなたの名前（みんなに表示されます）</label>
   <select id="userName">
     <option value="平野">平野</option>
@@ -447,6 +453,7 @@
     startTime = Date.now();
     currentSection = sectionSelect.value;
     sectionSelect.disabled = true;
+    userNameEl.disabled = true;
     startBtn.disabled = true;
     stopBtn.disabled = false;
     clearBtn.disabled = true;
@@ -485,6 +492,7 @@
     status.textContent = '停止中';
     status.classList.add('idle');
     sectionSelect.disabled = false;
+    userNameEl.disabled = false;
     startBtn.disabled = false;
     stopBtn.disabled = true;
     clearBtn.disabled = false;
