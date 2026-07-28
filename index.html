@@ -21,6 +21,13 @@
     display: flex;
     justify-content: center;
     padding: 24px 12px 60px;
+    transition: background 0.3s ease;
+  }
+  body.running {
+    background: #ffffff;
+  }
+  body.running .display {
+    color: #000000;
   }
   .app { width: 100%; max-width: 480px; }
   h1 {
@@ -36,7 +43,7 @@
     color: #7a8794;
     margin-bottom: 6px;
   }
-  select {
+  select, input[type="text"] {
     width: 100%;
     padding: 12px 14px;
     font-size: 16px;
@@ -52,10 +59,14 @@
   .display-row {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 14px;
     margin-bottom: 20px;
     min-height: 56px;
+  }
+  .spacer { flex: 1; }
+  .cart-lane {
+    flex: 1;
+    position: relative;
+    align-self: stretch;
   }
   .display {
     font-size: 48px;
@@ -65,22 +76,24 @@
     color: #ffffff;
     line-height: 1;
   }
-  .hourglass {
+  .cart {
+    position: absolute;
+    top: 50%;
+    left: 0;
     font-size: 30px;
     line-height: 1;
     visibility: hidden;
-    transform-origin: center;
   }
-  .hourglass.active {
+  .cart.active {
     visibility: visible;
-    animation: flip 4s ease-in-out infinite;
+    animation: roll 2.6s ease-in-out infinite;
   }
-  @keyframes flip {
-    0%   { transform: rotate(0deg); }
-    40%  { transform: rotate(0deg); }
-    50%  { transform: rotate(180deg); }
-    90%  { transform: rotate(180deg); }
-    100% { transform: rotate(360deg); }
+  @keyframes roll {
+    0%   { left: 0;                 transform: translateY(-50%) scaleX(-1); }
+    45%  { left: calc(100% - 34px); transform: translateY(-50%) scaleX(-1); }
+    50%  { left: calc(100% - 34px); transform: translateY(-50%) scaleX(1); }
+    95%  { left: 0;                 transform: translateY(-50%) scaleX(1); }
+    100% { left: 0;                 transform: translateY(-50%) scaleX(-1); }
   }
   .status {
     text-align: center;
@@ -158,11 +171,79 @@
     border-top: 1px solid #232a33;
   }
   .total b { color: #ffd479; font-variant-numeric: tabular-nums; }
+  .section-status {
+    margin-top: 16px;
+    background: #171c22;
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .section-status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: #8fa0b3;
+    margin-bottom: 12px;
+  }
+  .btn-reset-all {
+    flex: none;
+    width: auto;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    background: #3a2a2a;
+    color: #e6a3a3;
+    cursor: pointer;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chip {
+    font-size: 13px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: #232a33;
+    color: #7a8794;
+    border: 1px solid #2a323b;
+  }
+  .chip.done {
+    background: #d9534f;
+    color: #ffffff;
+    border-color: #d9534f;
+    font-weight: 600;
+  }
+  .chip.active {
+    background: #2f9e6a;
+    color: #ffffff;
+    border-color: #2f9e6a;
+    font-weight: 600;
+  }
+  .chip small {
+    display: block;
+    font-size: 10px;
+    font-weight: 400;
+    opacity: 0.9;
+    margin-top: 2px;
+  }
 </style>
 </head>
 <body>
 <div class="app">
   <h1>売場ピッキング区間計測</h1>
+  <label for="userName">あなたの名前（みんなに表示されます）</label>
+  <select id="userName">
+    <option value="平野">平野</option>
+    <option value="高橋">高橋</option>
+    <option value="小松原">小松原</option>
+    <option value="奥永">奥永</option>
+    <option value="大野">大野</option>
+    <option value="服部">服部</option>
+    <option value="ゲスト">ゲスト</option>
+  </select>
   <label for="sectionSelect">区間を選ぶ</label>
   <select id="sectionSelect">
     <option value="農産">農産</option>
@@ -183,8 +264,11 @@
     <option value="フリー">フリー</option>
   </select>
   <div class="display-row">
+    <span class="spacer"></span>
     <span class="display" id="display">0分</span>
-    <span class="hourglass" id="hourglass">⏳</span>
+    <span class="cart-lane">
+      <span class="cart" id="cart">🛒</span>
+    </span>
   </div>
   <div class="status idle" id="status">停止中</div>
   <div class="buttons">
@@ -204,18 +288,29 @@
       合計時間: <b id="totalTime">0分</b>
     </div>
   </div>
+  <div class="section-status">
+    <div class="section-status-header">
+      <span>区間の状況（緑＝計測中　赤＝完了）</span>
+      <button class="btn-reset-all" id="resetAllBtn">全員リセット</button>
+    </div>
+    <div class="chips" id="sectionList"></div>
+  </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
   let running = false;
   let startTime = null;
   let currentSection = '';
   let rafId = null;
   let records = [];
+  let sharedStatus = {};
+  let db = null;
 
   const sectionSelect = document.getElementById('sectionSelect');
   const display = document.getElementById('display');
-  const hourglass = document.getElementById('hourglass');
+  const cart = document.getElementById('cart');
   const status = document.getElementById('status');
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
@@ -225,6 +320,48 @@
   const countEl = document.getElementById('count');
   const totalRow = document.getElementById('totalRow');
   const totalTimeEl = document.getElementById('totalTime');
+  const sectionListEl = document.getElementById('sectionList');
+  const userNameEl = document.getElementById('userName');
+  const resetAllBtn = document.getElementById('resetAllBtn');
+
+  // ---- Firebase（みんなで共有）----
+  const firebaseConfig = {
+    apiKey: "AIzaSyCzrEc7e9qGPH_2PogrZfFSH8H5Z035aV0",
+    authDomain: "nespa-pt.firebaseapp.com",
+    databaseURL: "https://nespa-pt-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "nespa-pt",
+    storageBucket: "nespa-pt.firebasestorage.app",
+    messagingSenderId: "247771639596",
+    appId: "1:247771639596:web:3b980f4ce44613ed6b0689"
+  };
+  try {
+    if (typeof firebase !== 'undefined') {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      db.ref('status').on('value', (snap) => {
+        sharedStatus = snap.val() || {};
+        renderSections();
+      });
+    }
+  } catch (e) { db = null; }
+
+  function fbKey(s) { return String(s).replace(/[.#$\/\[\]]/g, '_'); }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function getUserName() { return (userNameEl.value || '').trim(); }
+
+  const savedName = localStorage.getItem('nespaPT_name') || '';
+  if (savedName) userNameEl.value = savedName;
+  userNameEl.addEventListener('change', () => {
+    localStorage.setItem('nespaPT_name', userNameEl.value);
+  });
+
+  resetAllBtn.addEventListener('click', () => {
+    if (!confirm('全員の「完了」状況をまとめてリセットします。よろしいですか？')) return;
+    if (db) { try { db.ref('status').remove(); } catch (e) {} }
+    else { alert('オフラインのため共有リセットできません。ネットにつないで再度お試しください。'); }
+  });
 
   function formatDuration(ms) {
     return Math.floor(ms / 60000) + '分';
@@ -252,7 +389,33 @@
     rafId = requestAnimationFrame(tick);
   }
 
+  function renderSections() {
+    let html = '';
+    Array.from(sectionSelect.options).forEach(opt => {
+      const info = sharedStatus[fbKey(opt.value)];
+      let cls = '';
+      let meta = '';
+      if (info) {
+        const state = info.state || 'done';
+        const who = info.by ? escapeHtml(info.by) : '';
+        const when = info.at ? escapeHtml(info.at) : '';
+        if (state === 'active') {
+          cls = ' active';
+          const parts = [who, '計測中'].filter(Boolean).join(' ');
+          meta = `<small>${parts}</small>`;
+        } else {
+          cls = ' done';
+          const parts = [who, when].filter(Boolean).join(' ');
+          if (parts) meta = `<small>${parts}</small>`;
+        }
+      }
+      html += `<span class="chip${cls}">${opt.value}${meta}</span>`;
+    });
+    sectionListEl.innerHTML = html;
+  }
+
   function updateTable() {
+    renderSections();
     if (records.length === 0) {
       tableWrap.innerHTML = '';
       tableWrap.appendChild(emptyMsg);
@@ -289,7 +452,17 @@
     clearBtn.disabled = true;
     status.textContent = '計測中... ' + currentSection;
     status.classList.remove('idle');
-    hourglass.classList.add('active');
+    cart.classList.add('active');
+    document.body.classList.add('running');
+    if (db) {
+      try {
+        db.ref('status/' + fbKey(currentSection)).set({
+          state: 'active',
+          by: getUserName() || '誰か',
+          at: formatClock(new Date(startTime))
+        });
+      } catch (e) {}
+    }
     tick();
   });
 
@@ -297,7 +470,8 @@
     if (!running) return;
     running = false;
     cancelAnimationFrame(rafId);
-    hourglass.classList.remove('active');
+    cart.classList.remove('active');
+    document.body.classList.remove('running');
     const endTime = Date.now();
     const durationMs = endTime - startTime;
     records.push({
@@ -314,6 +488,15 @@
     startBtn.disabled = false;
     stopBtn.disabled = true;
     clearBtn.disabled = false;
+    if (db) {
+      try {
+        db.ref('status/' + fbKey(currentSection)).set({
+          state: 'done',
+          by: getUserName() || '誰か',
+          at: formatClock(new Date(endTime))
+        });
+      } catch (e) {}
+    }
     updateTable();
   });
 
