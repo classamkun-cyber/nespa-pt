@@ -239,7 +239,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.11</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.12</span></h1>
   <label for="userName">あなたの名前（みんなに表示されます）</label>
   <select id="userName">
     <option value="平野">平野</option>
@@ -253,8 +253,7 @@
   <label for="sectionSelect">区間を選ぶ</label>
   <select id="sectionSelect">
     <option value="農産">農産</option>
-    <option value="水産">水産</option>
-    <option value="畜産">畜産</option>
+    <option value="水産・畜産">水産・畜産</option>
     <option value="デリカ">デリカ</option>
     <option value="グロサリ①">グロサリ①</option>
     <option value="グロサリ②">グロサリ②</option>
@@ -366,7 +365,7 @@
   resetAllBtn.addEventListener('click', () => {
     if (!confirm('全員の「完了」状況をまとめてリセットします。よろしいですか？')) return;
     if (db) { try { db.ref('status').remove(); } catch (e) {} }
-    else { alert('オフラインのため共有リセットできません。ネットにつないで再度お試しください。'); }
+    else { alert('オフラインのため共有リセットできません。ネットにつながってから再度お試しください。'); }
   });
 
   function formatDuration(ms) {
@@ -387,6 +386,22 @@
       const raw = localStorage.getItem('nespaPT');
       if (raw) records = JSON.parse(raw) || [];
     } catch (e) { records = []; }
+  }
+
+  // ---- 進行中セッションの保存／復元（V12）----
+  // 計測中にリロード・タブ/ブラウザを閉じても、開き直したときに計測を継続できるようにする
+  const ACTIVE_KEY = 'nespaPT_active';
+  function saveActive() {
+    try {
+      localStorage.setItem(ACTIVE_KEY, JSON.stringify({
+        section: currentSection,
+        startTime: startTime,
+        name: getUserName()
+      }));
+    } catch (e) {}
+  }
+  function clearActive() {
+    try { localStorage.removeItem(ACTIVE_KEY); } catch (e) {}
   }
 
   function tick() {
@@ -449,6 +464,19 @@
   }
 
   startBtn.addEventListener('click', () => {
+    // 共有の区間の状況をもとに、完了済み／計測中の区間なら確認する（V12）
+    const selectedSection = sectionSelect.value;
+    const selInfo = sharedStatus[fbKey(selectedSection)];
+    if (selInfo) {
+      const selState = selInfo.state || 'done';
+      const selWho = selInfo.by || '誰か';
+      if (selState === 'active') {
+        alert('この区間は ' + selWho + ' さんが計測中です。');
+        return;
+      } else if (selState === 'done') {
+        if (!confirm('この区間はすでに完了しています。もう一度計測し直しますか？')) return;
+      }
+    }
     running = true;
     startTime = Date.now();
     currentSection = sectionSelect.value;
@@ -461,6 +489,7 @@
     status.classList.remove('idle');
     cart.classList.add('active');
     document.body.classList.add('running');
+    saveActive();
     if (db) {
       try {
         db.ref('status/' + fbKey(currentSection)).set({
@@ -476,6 +505,7 @@
   stopBtn.addEventListener('click', () => {
     if (!running) return;
     running = false;
+    clearActive();
     cancelAnimationFrame(rafId);
     cart.classList.remove('active');
     document.body.classList.remove('running');
@@ -515,8 +545,47 @@
     updateTable();
   });
 
+  // 計測中に閉じた／リロードした場合、開き直したときに計測を復元して継続する（V12）
+  function restoreActive() {
+    let raw = null;
+    try { raw = localStorage.getItem(ACTIVE_KEY); } catch (e) {}
+    if (!raw) return;
+    let s = null;
+    try { s = JSON.parse(raw); } catch (e) { s = null; }
+    if (!s || !s.section || !s.startTime) { clearActive(); return; }
+
+    running = true;
+    startTime = s.startTime;
+    currentSection = s.section;
+    if (s.name) userNameEl.value = s.name;
+    sectionSelect.value = s.section;
+
+    sectionSelect.disabled = true;
+    userNameEl.disabled = true;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    clearBtn.disabled = true;
+    status.textContent = '計測中... ' + currentSection;
+    status.classList.remove('idle');
+    cart.classList.add('active');
+    document.body.classList.add('running');
+
+    // 共有側にも「計測中」を再登録（開始時刻はそのまま維持）
+    if (db) {
+      try {
+        db.ref('status/' + fbKey(currentSection)).set({
+          state: 'active',
+          by: getUserName() || '誰か',
+          at: formatClock(new Date(startTime))
+        });
+      } catch (e) {}
+    }
+    tick();
+  }
+
   loadRecords();
   updateTable();
+  restoreActive();
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
