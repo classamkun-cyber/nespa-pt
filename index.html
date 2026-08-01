@@ -191,17 +191,54 @@
     color: #8fa0b3;
     margin-bottom: 12px;
   }
+  .section-hint {
+    font-size: 13px;
+    color: #5c6773;
+    line-height: 1.5;
+    margin-top: 14px;
+    text-align: center;
+  }
+  .reset-zone {
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
+  }
   .btn-reset-all {
+    position: relative;
+    overflow: hidden;
     flex: none;
     width: auto;
-    padding: 6px 12px;
-    font-size: 12px;
+    min-width: 220px;
+    padding: 12px 20px;
+    font-size: 13px;
     font-weight: 600;
-    border: none;
-    border-radius: 8px;
-    background: #3a2a2a;
-    color: #e6a3a3;
+    border: 1px solid #3a2a2a;
+    border-radius: 10px;
+    background: #1a1512;
+    color: #b98a8a;
     cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: none;
+  }
+  .btn-reset-all .reset-label {
+    position: relative;
+    z-index: 1;
+  }
+  .btn-reset-all.holding .reset-label { color: #ffffff; }
+  .reset-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 0;
+    background: #d9534f;
+    z-index: 0;
+  }
+  .btn-reset-all.holding .reset-fill {
+    width: 100%;
+    transition: width 1.4s linear;
   }
   .chips {
     display: flex;
@@ -209,14 +246,35 @@
     gap: 8px;
   }
   .chip {
+    position: relative;
+    overflow: hidden;
     font-size: 13px;
     padding: 7px 12px;
     border-radius: 999px;
     background: #232a33;
     color: #7a8794;
     border: 1px solid #2a323b;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: none;
   }
-  .chip.done {
+  .chip-label { position: relative; z-index: 1; }
+  .chip-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 0;
+    background: rgba(255,255,255,0.32);
+    z-index: 0;
+  }
+  .chip.holding .chip-fill {
+    width: 100%;
+    transition: width 1.4s linear;
+  }
+  .chip.done, .chip.skip {
     background: #d9534f;
     color: #ffffff;
     border-color: #d9534f;
@@ -239,7 +297,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.12</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.14</span></h1>
   <label for="userName">あなたの名前（みんなに表示されます）</label>
   <select id="userName">
     <option value="平野">平野</option>
@@ -295,10 +353,16 @@
   </div>
   <div class="section-status">
     <div class="section-status-header">
-      <span>区間の状況（緑＝計測中　赤＝完了）</span>
-      <button class="btn-reset-all" id="resetAllBtn">全員リセット</button>
+      <span>区間の状況（緑＝計測中　赤＝完了・注文なし）</span>
     </div>
     <div class="chips" id="sectionList"></div>
+    <div class="section-hint">区間を長押し→「注文なし」に<br>赤を長押し→取消（完了は記録も削除）</div>
+    <div class="reset-zone">
+      <button class="btn-reset-all" id="resetAllBtn" type="button">
+        <span class="reset-fill" id="resetFill"></span>
+        <span class="reset-label">⟳ 全員リセット（長押し）</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -312,6 +376,8 @@
   let records = [];
   let sharedStatus = {};
   let db = null;
+  let chipHolding = false;
+  let pendingRender = false;
 
   const sectionSelect = document.getElementById('sectionSelect');
   const display = document.getElementById('display');
@@ -362,11 +428,117 @@
     localStorage.setItem('nespaPT_name', userNameEl.value);
   });
 
-  resetAllBtn.addEventListener('click', () => {
-    if (!confirm('全員の「完了」状況をまとめてリセットします。よろしいですか？')) return;
+  // ---- 全員リセットは「長押し」で発動（誤タップ防止・V13）----
+  const RESET_HOLD_MS = 1400;
+  let resetHoldTimer = null;
+
+  function doResetAll() {
     if (db) { try { db.ref('status').remove(); } catch (e) {} }
     else { alert('オフラインのため共有リセットできません。ネットにつながってから再度お試しください。'); }
-  });
+  }
+  function startResetHold(e) {
+    if (e) e.preventDefault();
+    if (resetHoldTimer) return;
+    resetAllBtn.classList.add('holding');
+    resetHoldTimer = setTimeout(() => {
+      resetHoldTimer = null;
+      resetAllBtn.classList.remove('holding');
+      if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+      doResetAll();
+    }, RESET_HOLD_MS);
+  }
+  function cancelResetHold() {
+    if (resetHoldTimer) { clearTimeout(resetHoldTimer); resetHoldTimer = null; }
+    resetAllBtn.classList.remove('holding');
+  }
+  resetAllBtn.addEventListener('pointerdown', startResetHold);
+  resetAllBtn.addEventListener('pointerup', cancelResetHold);
+  resetAllBtn.addEventListener('pointerleave', cancelResetHold);
+  resetAllBtn.addEventListener('pointercancel', cancelResetHold);
+  // クリックそのものでは何も起こさない（保険）
+  resetAllBtn.addEventListener('click', (e) => { e.preventDefault(); });
+
+  // ---- 区間チップの長押し（注文なしマーク／取消）V14 ----
+  const CHIP_HOLD_MS = 1400;
+  let chipHoldTimer = null;
+  let chipHoldEl = null;
+
+  function chipStateOf(section) {
+    const info = sharedStatus[fbKey(section)];
+    return info ? (info.state || 'done') : '';
+  }
+
+  // 記録一覧から、その区間の「一番新しい1件」を削除する
+  function removeLatestRecord(section) {
+    for (let i = records.length - 1; i >= 0; i--) {
+      if (records[i].section === section) {
+        records.splice(i, 1);
+        saveRecords();
+        updateTable();
+        return;
+      }
+    }
+  }
+
+  function applyChipLongPress(section, state) {
+    const key = fbKey(section);
+    if (state === 'done' || state === 'skip') {
+      // 赤 → グレー（未着手）に戻す
+      if (db) { try { db.ref('status/' + key).remove(); } catch (e) {} }
+      // 「完了」を取り消すときは、対応する記録一覧も1件消す
+      if (state === 'done') removeLatestRecord(section);
+    } else {
+      // グレー（未着手）→「注文なし」（赤）
+      if (db) {
+        try {
+          db.ref('status/' + key).set({
+            state: 'skip',
+            by: getUserName() || '誰か',
+            at: formatClock(new Date())
+          });
+        } catch (e) {}
+      } else {
+        alert('オフラインのため共有できません。ネットにつながってから再度お試しください。');
+      }
+    }
+  }
+
+  function startChipHold(e) {
+    const chip = e.target.closest('.chip');
+    if (!chip || !sectionListEl.contains(chip)) return;
+    const section = chip.getAttribute('data-section');
+    if (chipStateOf(section) === 'active') return; // 計測中は操作しない
+    e.preventDefault();
+    chipHoldEl = chip;
+    chipHolding = true;
+    chip.classList.add('holding');
+    chipHoldTimer = setTimeout(() => {
+      chipHoldTimer = null;
+      chip.classList.remove('holding');
+      if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
+      applyChipLongPress(section, chipStateOf(section));
+      chipHolding = false;
+      chipHoldEl = null;
+      renderSections();
+    }, CHIP_HOLD_MS);
+  }
+  function cancelChipHold() {
+    if (chipHoldTimer) { clearTimeout(chipHoldTimer); chipHoldTimer = null; }
+    if (chipHoldEl) chipHoldEl.classList.remove('holding');
+    chipHoldEl = null;
+    chipHolding = false;
+    if (pendingRender) renderSections();
+  }
+  function onChipMove(e) {
+    if (!chipHoldTimer) return;
+    const chip = e.target.closest('.chip');
+    if (chip !== chipHoldEl) cancelChipHold();
+  }
+  sectionListEl.addEventListener('pointerdown', startChipHold);
+  sectionListEl.addEventListener('pointermove', onChipMove);
+  sectionListEl.addEventListener('pointerup', cancelChipHold);
+  sectionListEl.addEventListener('pointerleave', cancelChipHold);
+  sectionListEl.addEventListener('pointercancel', cancelChipHold);
 
   function formatDuration(ms) {
     return Math.floor(ms / 60000) + '分';
@@ -411,6 +583,9 @@
   }
 
   function renderSections() {
+    // 長押し中はDOMを作り替えない（操作が途切れないように／終わったら描き直す）
+    if (chipHolding) { pendingRender = true; return; }
+    pendingRender = false;
     let html = '';
     Array.from(sectionSelect.options).forEach(opt => {
       const info = sharedStatus[fbKey(opt.value)];
@@ -424,13 +599,17 @@
           cls = ' active';
           const parts = [who, '計測中'].filter(Boolean).join(' ');
           meta = `<small>${parts}</small>`;
+        } else if (state === 'skip') {
+          cls = ' skip';
+          const parts = ['注文なし', who].filter(Boolean).join(' ');
+          meta = `<small>${parts}</small>`;
         } else {
           cls = ' done';
           const parts = [who, when].filter(Boolean).join(' ');
           if (parts) meta = `<small>${parts}</small>`;
         }
       }
-      html += `<span class="chip${cls}">${opt.value}${meta}</span>`;
+      html += `<span class="chip${cls}" data-section="${escapeHtml(opt.value)}"><span class="chip-fill"></span><span class="chip-label">${escapeHtml(opt.value)}${meta}</span></span>`;
     });
     sectionListEl.innerHTML = html;
   }
@@ -475,6 +654,8 @@
         return;
       } else if (selState === 'done') {
         if (!confirm('この区間はすでに完了しています。もう一度計測し直しますか？')) return;
+      } else if (selState === 'skip') {
+        if (!confirm('この区間は「注文なし」になっています。計測しますか？')) return;
       }
     }
     running = true;
