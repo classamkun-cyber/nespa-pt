@@ -146,37 +146,38 @@
     align-items: center;
     padding: 12px 16px;
     background: #1d232b;
-    font-size: 13px;
+    font-size: 15px;
     color: #8fa0b3;
   }
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: 18px;
   }
   th, td {
-    padding: 10px 12px;
+    padding: 11px 8px;
     text-align: left;
+    white-space: nowrap;
     border-bottom: 1px solid #232a33;
   }
-  th { color: #7a8794; font-weight: 500; font-size: 12px; }
-  td.num { color: #7a8794; width: 24px; }
+  th { color: #7a8794; font-weight: 500; font-size: 14px; }
+  td.num { color: #7a8794; width: 20px; font-size: 14px; }
   td.dur { font-variant-numeric: tabular-nums; color: #ffd479; text-align: right; white-space: nowrap; }
   tr:last-child td { border-bottom: none; }
   .empty {
     text-align: center;
     padding: 24px;
     color: #5c6773;
-    font-size: 13px;
+    font-size: 15px;
   }
   .total {
     padding: 12px 16px;
     text-align: right;
-    font-size: 13px;
+    font-size: 15px;
     color: #9fb2c7;
     border-top: 1px solid #232a33;
   }
-  .total b { color: #ffd479; font-variant-numeric: tabular-nums; }
+  .total b { color: #ffd479; font-variant-numeric: tabular-nums; font-size: 15px; }
   .section-status {
     margin-top: 16px;
     background: #171c22;
@@ -241,24 +242,26 @@
     transition: width 1.4s linear;
   }
   .chips {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 8px;
   }
   .chip {
     position: relative;
     overflow: hidden;
-    font-size: 13px;
-    padding: 7px 12px;
+    font-size: clamp(13px, 4.4vw, 18px);
+    padding: 8px 6px;
+    text-align: center;
+    white-space: nowrap;
     border-radius: 999px;
     background: #232a33;
-    color: #7a8794;
+    color: #c5d0dc;
     border: 1px solid #2a323b;
     cursor: pointer;
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
-    touch-action: none;
+    touch-action: pan-y;
   }
   .chip-label { position: relative; z-index: 1; }
   .chip-fill {
@@ -288,7 +291,7 @@
   }
   .chip small {
     display: block;
-    font-size: 10px;
+    font-size: clamp(10px, 2.7vw, 12px);
     font-weight: 400;
     opacity: 0.9;
     margin-top: 2px;
@@ -297,7 +300,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.14</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.15</span></h1>
   <label for="userName">あなたの名前（みんなに表示されます）</label>
   <select id="userName">
     <option value="平野">平野</option>
@@ -462,6 +465,8 @@
   const CHIP_HOLD_MS = 1400;
   let chipHoldTimer = null;
   let chipHoldEl = null;
+  let chipHoldStartX = 0;
+  let chipHoldStartY = 0;
 
   function chipStateOf(section) {
     const info = sharedStatus[fbKey(section)];
@@ -508,7 +513,9 @@
     if (!chip || !sectionListEl.contains(chip)) return;
     const section = chip.getAttribute('data-section');
     if (chipStateOf(section) === 'active') return; // 計測中は操作しない
-    e.preventDefault();
+    // スワイプを妨げないため preventDefault はしない（V15）
+    chipHoldStartX = e.clientX;
+    chipHoldStartY = e.clientY;
     chipHoldEl = chip;
     chipHolding = true;
     chip.classList.add('holding');
@@ -531,6 +538,11 @@
   }
   function onChipMove(e) {
     if (!chipHoldTimer) return;
+    // 指が動いたらスワイプ（スクロール）とみなして長押しを中止（V15）
+    if (Math.abs(e.clientX - chipHoldStartX) > 8 || Math.abs(e.clientY - chipHoldStartY) > 8) {
+      cancelChipHold();
+      return;
+    }
     const chip = e.target.closest('.chip');
     if (chip !== chipHoldEl) cancelChipHold();
   }
@@ -539,6 +551,7 @@
   sectionListEl.addEventListener('pointerup', cancelChipHold);
   sectionListEl.addEventListener('pointerleave', cancelChipHold);
   sectionListEl.addEventListener('pointercancel', cancelChipHold);
+  window.addEventListener('scroll', cancelChipHold, { passive: true });
 
   function formatDuration(ms) {
     return Math.floor(ms / 60000) + '分';
@@ -609,6 +622,8 @@
           if (parts) meta = `<small>${parts}</small>`;
         }
       }
+      // 未着手（グレー）でも1行分のスペースを確保して高さを揃える（V15）
+      if (!meta) meta = '<small>&nbsp;</small>';
       html += `<span class="chip${cls}" data-section="${escapeHtml(opt.value)}"><span class="chip-fill"></span><span class="chip-label">${escapeHtml(opt.value)}${meta}</span></span>`;
     });
     sectionListEl.innerHTML = html;
