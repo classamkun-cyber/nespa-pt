@@ -49,6 +49,11 @@
     color: #7a8794;
     margin-bottom: 6px;
   }
+  /* ラベル内の補足（例：（チップで選択可））は少し小さく（V16） */
+  label small {
+    font-size: 11px;
+    opacity: 0.85;
+  }
   select, input[type="text"] {
     width: 100%;
     padding: 12px 14px;
@@ -61,14 +66,30 @@
     appearance: none;
     -webkit-appearance: none;
   }
-  select:disabled { opacity: 0.5; }
+  /* 計測中も「どの区間か」を読めるように薄くしすぎない（V16） */
+  select:disabled { opacity: 0.75; }
+  /* 区間の選択欄は、選択中チップと同じ白枠で「対」にする（V16） */
+  #sectionSelect { box-shadow: 0 0 0 2px #ffffff; }
+  /* タップ時に出るブラウザ標準のフォーカス枠を消す（白枠＝選択中、と紛らわしいため・V16） */
+  select:focus { outline: none; }
+  /* 名前と区間を半分ずつ横並びに（V16） */
+  .field-row {
+    display: flex;
+    align-items: flex-end;  /* ラベルが2行になっても入力欄の高さを揃える */
+    gap: 10px;
+  }
+  .field {
+    min-width: 0;
+  }
+  /* 名前:区間 = 4:6（名前側が窮屈だったため3:7から戻した） */
+  .field:nth-child(1) { flex: 4 1 0; }
+  .field:nth-child(2) { flex: 6 1 0; }
   .display-row {
     display: flex;
     align-items: center;
     margin-bottom: 20px;
     min-height: 56px;
   }
-  .spacer { flex: 1; }
   .cart-lane {
     flex: 1;
     position: relative;
@@ -90,25 +111,37 @@
     line-height: 1;
     visibility: hidden;
   }
+  /* 片道1.8秒×往復＝1サイクル3.6秒。「計測中」の明滅(1.8秒)と同期する（V16） */
   .cart.active {
     visibility: visible;
-    animation: roll 2.6s ease-in-out infinite;
+    animation: roll 3.6s ease-in-out infinite;
   }
   @keyframes roll {
-    0%   { left: 0;                 transform: translateY(-50%) scaleX(-1); }
-    45%  { left: calc(100% - 34px); transform: translateY(-50%) scaleX(-1); }
-    50%  { left: calc(100% - 34px); transform: translateY(-50%) scaleX(1); }
-    95%  { left: 0;                 transform: translateY(-50%) scaleX(1); }
-    100% { left: 0;                 transform: translateY(-50%) scaleX(-1); }
+    0%     { left: 0;                 transform: translateY(-50%) scaleX(-1); }
+    50%    { left: calc(100% - 34px); transform: translateY(-50%) scaleX(-1); }
+    50.01% { left: calc(100% - 34px); transform: translateY(-50%) scaleX(1); }
+    100%   { left: 0;                 transform: translateY(-50%) scaleX(1); }
   }
+  /* 状態表示は計測時間の左横・上下センター（V16） */
   .status {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 20px;
+    line-height: 1.35;
     text-align: center;
-    font-size: 13px;
-    margin-bottom: 20px;
-    height: 16px;
     color: #6fcf97;
   }
   .status.idle { color: #7a8794; }
+  /* 計測中＝スタートボタンと同じ緑で、ゆっくり明滅させて「動いている」ことを伝える（V16） */
+  body.running .status {
+    color: #2f9e6a;
+    animation: blink 1.8s ease-in-out infinite;
+  }
+  /* ゆっくり暗くなって、ループの頭でパッと点く（V16） */
+  @keyframes blink {
+    0%, 8%    { opacity: 1; }
+    75%, 100% { opacity: 0.15; }
+  }
   .buttons {
     display: flex;
     gap: 12px;
@@ -128,17 +161,55 @@
   button:disabled { opacity: 0.35; cursor: default; }
   .btn-start { background: #2f9e6a; color: white; }
   .btn-stop { background: #d9534f; color: white; }
-  .btn-clear {
-    background: #2a323b;
-    color: #cfd8e3;
-    flex: none;
-    width: 46px;
-    padding: 14px 0;
-  }
   .records {
+    margin-top: 16px;
     background: #171c22;
     border-radius: 12px;
     overflow: hidden;
+  }
+  /* 記録クリアは記録一覧カードの下へ・長押しで発動（V16） */
+  .clear-zone {
+    padding: 14px 16px;
+    display: flex;
+    justify-content: center;
+    border-top: 1px solid #232a33;
+  }
+  .btn-clear-all {
+    position: relative;
+    overflow: hidden;
+    flex: none;
+    width: auto;
+    min-width: 220px;
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid #3a2a2a;
+    border-radius: 10px;
+    background: #1a1512;
+    color: #b98a8a;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: pan-y;
+  }
+  .btn-clear-all .clear-label {
+    position: relative;
+    z-index: 1;
+  }
+  .btn-clear-all.holding .clear-label { color: #ffffff; }
+  .clear-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 0;
+    background: #d9534f;
+    z-index: 0;
+  }
+  .btn-clear-all.holding .clear-fill {
+    width: 100%;
+    transition: width 1.4s linear;
   }
   .records-header {
     display: flex;
@@ -179,7 +250,6 @@
   }
   .total b { color: #ffd479; font-variant-numeric: tabular-nums; font-size: 15px; }
   .section-status {
-    margin-top: 16px;
     background: #171c22;
     border-radius: 12px;
     padding: 14px 16px;
@@ -221,7 +291,7 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
-    touch-action: none;
+    touch-action: pan-y;
   }
   .btn-reset-all .reset-label {
     position: relative;
@@ -289,6 +359,10 @@
     border-color: #2f9e6a;
     font-weight: 600;
   }
+  /* いま選ばれている区間（タップで選択・V16）＝「区間を選ぶ」欄と同じ白枠で対にする */
+  .chip.selected {
+    box-shadow: 0 0 0 2px #ffffff;
+  }
   .chip small {
     display: block;
     font-size: clamp(10px, 2.7vw, 12px);
@@ -300,8 +374,10 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.15</span></h1>
-  <label for="userName">あなたの名前（みんなに表示されます）</label>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.16</span></h1>
+  <div class="field-row">
+  <div class="field">
+  <label for="userName">あなたの名前</label>
   <select id="userName">
     <option value="平野">平野</option>
     <option value="高橋">高橋</option>
@@ -311,7 +387,9 @@
     <option value="服部">服部</option>
     <option value="ゲスト">ゲスト</option>
   </select>
-  <label for="sectionSelect">区間を選ぶ</label>
+  </div>
+  <div class="field">
+  <label for="sectionSelect">区間を選ぶ<small>（↓チップでも可）</small></label>
   <select id="sectionSelect">
     <option value="農産">農産</option>
     <option value="水産・畜産">水産・畜産</option>
@@ -329,18 +407,31 @@
     <option value="衣料・住余">衣料・住余</option>
     <option value="フリー">フリー</option>
   </select>
+  </div>
+  </div>
   <div class="display-row">
-    <span class="spacer"></span>
+    <span class="status idle" id="status">停止中</span>
     <span class="display" id="display">0分</span>
     <span class="cart-lane">
       <span class="cart" id="cart">🛒</span>
     </span>
   </div>
-  <div class="status idle" id="status">停止中</div>
   <div class="buttons">
     <button class="btn-start" id="startBtn">スタート</button>
     <button class="btn-stop" id="stopBtn" disabled>ストップ</button>
-    <button class="btn-clear" id="clearBtn" title="記録クリア">C</button>
+  </div>
+  <div class="section-status">
+    <div class="section-status-header">
+      <span>区間の状況（緑＝計測中　赤＝完了・注文なし）</span>
+    </div>
+    <div class="chips" id="sectionList"></div>
+    <div class="section-hint">区間を長押し→「注文なし」に<br>赤を長押し→取消（完了は記録も削除）</div>
+    <div class="reset-zone">
+      <button class="btn-reset-all" id="resetAllBtn" type="button">
+        <span class="reset-fill" id="resetFill"></span>
+        <span class="reset-label">⟳ 全員リセット（長押し）</span>
+      </button>
+    </div>
   </div>
   <div class="records">
     <div class="records-header">
@@ -353,17 +444,10 @@
     <div class="total" id="totalRow" style="display:none;">
       合計時間: <b id="totalTime">0分</b>
     </div>
-  </div>
-  <div class="section-status">
-    <div class="section-status-header">
-      <span>区間の状況（緑＝計測中　赤＝完了・注文なし）</span>
-    </div>
-    <div class="chips" id="sectionList"></div>
-    <div class="section-hint">区間を長押し→「注文なし」に<br>赤を長押し→取消（完了は記録も削除）</div>
-    <div class="reset-zone">
-      <button class="btn-reset-all" id="resetAllBtn" type="button">
-        <span class="reset-fill" id="resetFill"></span>
-        <span class="reset-label">⟳ 全員リセット（長押し）</span>
+    <div class="clear-zone">
+      <button class="btn-clear-all" id="clearBtn" type="button">
+        <span class="clear-fill" id="clearFill"></span>
+        <span class="clear-label">🗑 記録をクリア（長押し）</span>
       </button>
     </div>
   </div>
@@ -434,14 +518,18 @@
   // ---- 全員リセットは「長押し」で発動（誤タップ防止・V13）----
   const RESET_HOLD_MS = 1400;
   let resetHoldTimer = null;
+  let resetHoldStartX = 0;
+  let resetHoldStartY = 0;
 
   function doResetAll() {
     if (db) { try { db.ref('status').remove(); } catch (e) {} }
     else { alert('オフラインのため共有リセットできません。ネットにつながってから再度お試しください。'); }
   }
   function startResetHold(e) {
-    if (e) e.preventDefault();
+    // スワイプを妨げないため preventDefault はしない（V16）
     if (resetHoldTimer) return;
+    resetHoldStartX = e ? e.clientX : 0;
+    resetHoldStartY = e ? e.clientY : 0;
     resetAllBtn.classList.add('holding');
     resetHoldTimer = setTimeout(() => {
       resetHoldTimer = null;
@@ -454,10 +542,19 @@
     if (resetHoldTimer) { clearTimeout(resetHoldTimer); resetHoldTimer = null; }
     resetAllBtn.classList.remove('holding');
   }
+  // 指が動いたらスワイプ（スクロール）とみなして長押しを中止（V16）
+  function onResetMove(e) {
+    if (!resetHoldTimer) return;
+    if (Math.abs(e.clientX - resetHoldStartX) > 8 || Math.abs(e.clientY - resetHoldStartY) > 8) {
+      cancelResetHold();
+    }
+  }
   resetAllBtn.addEventListener('pointerdown', startResetHold);
+  resetAllBtn.addEventListener('pointermove', onResetMove);
   resetAllBtn.addEventListener('pointerup', cancelResetHold);
   resetAllBtn.addEventListener('pointerleave', cancelResetHold);
   resetAllBtn.addEventListener('pointercancel', cancelResetHold);
+  window.addEventListener('scroll', cancelResetHold, { passive: true });
   // クリックそのものでは何も起こさない（保険）
   resetAllBtn.addEventListener('click', (e) => { e.preventDefault(); });
 
@@ -467,6 +564,18 @@
   let chipHoldEl = null;
   let chipHoldStartX = 0;
   let chipHoldStartY = 0;
+  let chipTapCandidate = false;   // 短いタップかどうか（V16）
+  let chipLongFired = false;      // 長押しが発動したか（V16）
+
+  // ---- チップをタップ→その区間を選択（V16）----
+  function selectSection(section) {
+    if (!section) return;
+    if (running) return;  // 計測中は区間を変えない（プルダウンも無効中）
+    sectionSelect.value = section;
+    renderSections();
+    if (navigator.vibrate) { try { navigator.vibrate(10); } catch (e) {} }
+  }
+  sectionSelect.addEventListener('change', renderSections);
 
   function chipStateOf(section) {
     const info = sharedStatus[fbKey(section)];
@@ -512,15 +621,20 @@
     const chip = e.target.closest('.chip');
     if (!chip || !sectionListEl.contains(chip)) return;
     const section = chip.getAttribute('data-section');
-    if (chipStateOf(section) === 'active') return; // 計測中は操作しない
     // スワイプを妨げないため preventDefault はしない（V15）
     chipHoldStartX = e.clientX;
     chipHoldStartY = e.clientY;
     chipHoldEl = chip;
+    chipTapCandidate = true;
+    chipLongFired = false;
+    // 計測中の区間は長押し操作なし（タップでの選択だけ受け付ける・V16）
+    if (chipStateOf(section) === 'active') return;
     chipHolding = true;
     chip.classList.add('holding');
     chipHoldTimer = setTimeout(() => {
       chipHoldTimer = null;
+      chipLongFired = true;
+      chipTapCandidate = false;
       chip.classList.remove('holding');
       if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
       applyChipLongPress(section, chipStateOf(section));
@@ -528,6 +642,15 @@
       chipHoldEl = null;
       renderSections();
     }, CHIP_HOLD_MS);
+  }
+
+  // 指を離した時点で「長押しが発動していない＝タップ」なら区間を選択（V16）
+  function onChipPointerUp() {
+    if (chipTapCandidate && !chipLongFired && chipHoldEl) {
+      selectSection(chipHoldEl.getAttribute('data-section'));
+    }
+    chipTapCandidate = false;
+    cancelChipHold();
   }
   function cancelChipHold() {
     if (chipHoldTimer) { clearTimeout(chipHoldTimer); chipHoldTimer = null; }
@@ -537,21 +660,29 @@
     if (pendingRender) renderSections();
   }
   function onChipMove(e) {
-    if (!chipHoldTimer) return;
-    // 指が動いたらスワイプ（スクロール）とみなして長押しを中止（V15）
+    if (!chipHoldEl) return;
+    // 指が動いたらスワイプ（スクロール）とみなして長押し・タップを中止（V15/V16）
     if (Math.abs(e.clientX - chipHoldStartX) > 8 || Math.abs(e.clientY - chipHoldStartY) > 8) {
+      chipTapCandidate = false;
       cancelChipHold();
       return;
     }
     const chip = e.target.closest('.chip');
-    if (chip !== chipHoldEl) cancelChipHold();
+    if (chip !== chipHoldEl) {
+      chipTapCandidate = false;
+      cancelChipHold();
+    }
+  }
+  function onChipAbort() {
+    chipTapCandidate = false;
+    cancelChipHold();
   }
   sectionListEl.addEventListener('pointerdown', startChipHold);
   sectionListEl.addEventListener('pointermove', onChipMove);
-  sectionListEl.addEventListener('pointerup', cancelChipHold);
-  sectionListEl.addEventListener('pointerleave', cancelChipHold);
-  sectionListEl.addEventListener('pointercancel', cancelChipHold);
-  window.addEventListener('scroll', cancelChipHold, { passive: true });
+  sectionListEl.addEventListener('pointerup', onChipPointerUp);
+  sectionListEl.addEventListener('pointerleave', onChipAbort);
+  sectionListEl.addEventListener('pointercancel', onChipAbort);
+  window.addEventListener('scroll', onChipAbort, { passive: true });
 
   function formatDuration(ms) {
     return Math.floor(ms / 60000) + '分';
@@ -624,6 +755,8 @@
       }
       // 未着手（グレー）でも1行分のスペースを確保して高さを揃える（V15）
       if (!meta) meta = '<small>&nbsp;</small>';
+      // いま選ばれている区間に枠を付ける（V16）
+      if (opt.value === sectionSelect.value) cls += ' selected';
       html += `<span class="chip${cls}" data-section="${escapeHtml(opt.value)}"><span class="chip-fill"></span><span class="chip-label">${escapeHtml(opt.value)}${meta}</span></span>`;
     });
     sectionListEl.innerHTML = html;
@@ -681,7 +814,7 @@
     startBtn.disabled = true;
     stopBtn.disabled = false;
     clearBtn.disabled = true;
-    status.textContent = '計測中... ' + currentSection;
+    status.textContent = '計測中';
     status.classList.remove('idle');
     cart.classList.add('active');
     document.body.classList.add('running');
@@ -734,12 +867,48 @@
     updateTable();
   });
 
-  clearBtn.addEventListener('click', () => {
+  // ---- 記録クリアも「長押し」で発動（誤タップ防止・V16）----
+  const CLEAR_HOLD_MS = 1400;
+  let clearHoldTimer = null;
+  let clearHoldStartX = 0;
+  let clearHoldStartY = 0;
+
+  function doClearRecords() {
     records = [];
     saveRecords();
     display.textContent = '0分';
     updateTable();
-  });
+  }
+  function startClearHold(e) {
+    if (clearHoldTimer) return;
+    clearHoldStartX = e ? e.clientX : 0;
+    clearHoldStartY = e ? e.clientY : 0;
+    clearBtn.classList.add('holding');
+    clearHoldTimer = setTimeout(() => {
+      clearHoldTimer = null;
+      clearBtn.classList.remove('holding');
+      if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+      doClearRecords();
+    }, CLEAR_HOLD_MS);
+  }
+  function cancelClearHold() {
+    if (clearHoldTimer) { clearTimeout(clearHoldTimer); clearHoldTimer = null; }
+    clearBtn.classList.remove('holding');
+  }
+  function onClearMove(e) {
+    if (!clearHoldTimer) return;
+    if (Math.abs(e.clientX - clearHoldStartX) > 8 || Math.abs(e.clientY - clearHoldStartY) > 8) {
+      cancelClearHold();
+    }
+  }
+  clearBtn.addEventListener('pointerdown', startClearHold);
+  clearBtn.addEventListener('pointermove', onClearMove);
+  clearBtn.addEventListener('pointerup', cancelClearHold);
+  clearBtn.addEventListener('pointerleave', cancelClearHold);
+  clearBtn.addEventListener('pointercancel', cancelClearHold);
+  window.addEventListener('scroll', cancelClearHold, { passive: true });
+  // クリックそのものでは何も起こさない（保険）
+  clearBtn.addEventListener('click', (e) => { e.preventDefault(); });
 
   // 計測中に閉じた／リロードした場合、開き直したときに計測を復元して継続する（V12）
   function restoreActive() {
@@ -761,7 +930,7 @@
     startBtn.disabled = true;
     stopBtn.disabled = false;
     clearBtn.disabled = true;
-    status.textContent = '計測中... ' + currentSection;
+    status.textContent = '計測中';
     status.classList.remove('idle');
     cart.classList.add('active');
     document.body.classList.add('running');
