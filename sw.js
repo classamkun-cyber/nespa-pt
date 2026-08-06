@@ -1,4 +1,4 @@
-const CACHE = 'nespaPT-v9';
+const CACHE = 'nespaPT-v10';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.png', './icon-192.png'];
 
 self.addEventListener('install', (e) => {

@@ -113,16 +113,61 @@
     line-height: 1;
     visibility: hidden;
   }
-  /* 片道1.8秒×往復＝1サイクル3.6秒。「計測中」の明滅(1.8秒)と同期する（V16） */
+  /* 行き1.4秒（空なので速い）＋右端で1.0秒停止（3個積み込む）＋帰り2.4秒（積んでいるのでゆっくり）
+     ＝1サイクル4.8秒。行きと帰りで約1.7倍の速度差。「計測中」の明滅も同じ4.8秒で同期（V16.1） */
   .cart.active {
     visibility: visible;
-    animation: roll 3.6s ease-in-out infinite;
+    animation: roll 4.8s ease-in-out infinite;
   }
   @keyframes roll {
-    0%     { left: 0;                 transform: translateY(-50%) scaleX(-1); }
-    50%    { left: calc(100% - 34px); transform: translateY(-50%) scaleX(-1); }
-    50.01% { left: calc(100% - 34px); transform: translateY(-50%) scaleX(1); }
-    100%   { left: 0;                 transform: translateY(-50%) scaleX(1); }
+    0%       { left: 0;                 transform: translateY(-50%) scaleX(-1); }
+    29.167%  { left: calc(100% - 34px); transform: translateY(-50%) scaleX(-1); } /* 1.4秒＝右端に到着 */
+    29.18%   { left: calc(100% - 34px); transform: translateY(-50%) scaleX(1); }  /* 着いたら向きを変える */
+    50%      { left: calc(100% - 34px); transform: translateY(-50%) scaleX(1); }  /* 1.0秒停止＝積み込み */
+    100%     { left: 0;                 transform: translateY(-50%) scaleX(1); }  /* 2.4秒かけてゆっくり戻る */
+  }
+  /* カートに積む商品（V16.1・小松原さんの提案）
+     行きは空、右端で商品を2個積んで帰ってくる（1往復＝3.6秒でカートの往復と同じサイクル）。
+     ※商品が見えるのは必ず帰り道＝カートが反転していない区間なので、商品側で向きを
+       打ち消す必要はない（行きは opacity:0 で隠れている） */
+  .cart .load {
+    position: absolute;
+    top: 4px;
+    font-size: 12px;
+    line-height: 1;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* カゴからはみ出さないよう左寄せ（V16.1調整）。3個目は2個の上に載せて三角に積む */
+  .cart .load1 { left: 4px; }
+  .cart .load2 { left: 13px; }
+  .cart .load3 { left: 8px; top: -3px; }
+  /* カート本体を商品より前面に置くと「カゴの中に入っている」ように見える（V16.1） */
+  .cart .glyph { position: relative; z-index: 2; }
+  .cart .load  { z-index: 1; }
+  .cart.active .load1 { animation: load1 4.8s linear infinite; }
+  .cart.active .load2 { animation: load2 4.8s linear infinite; }
+  .cart.active .load3 { animation: load3 4.8s linear infinite; }
+  /* 1個目：カートが右端で止まった直後（1.45秒）に、18px上から0.55秒かけて落ちてくる */
+  @keyframes load1 {
+    0%,     30.0%  { opacity: 0; transform: translateY(-18px); }
+    30.208%        { opacity: 1; transform: translateY(-18px); animation-timing-function: ease-in; }
+    41.667%, 96.7% { opacity: 1; transform: translateY(0); }
+    100%           { opacity: 0; transform: translateY(0); }
+  }
+  /* 2個目：1個目より 0.14秒おくれ（ズラすのがミソ） */
+  @keyframes load2 {
+    0%,     32.9%  { opacity: 0; transform: translateY(-18px); }
+    33.125%        { opacity: 1; transform: translateY(-18px); animation-timing-function: ease-in; }
+    44.583%, 96.7% { opacity: 1; transform: translateY(0); }
+    100%           { opacity: 0; transform: translateY(0); }
+  }
+  /* 3個目：さらに0.14秒おくれて、下の2個の上（三角の頂点）に着地 */
+  @keyframes load3 {
+    0%,     35.8%  { opacity: 0; transform: translateY(-18px); }
+    36.042%        { opacity: 1; transform: translateY(-18px); animation-timing-function: ease-in; }
+    47.5%,  96.7%  { opacity: 1; transform: translateY(0); }
+    100%           { opacity: 0; transform: translateY(0); }
   }
   /* 状態表示は計測時間の左横・上下センター（V16） */
   .status {
@@ -137,12 +182,16 @@
   /* 計測中＝スタートボタンと同じ緑で、ゆっくり明滅させて「動いている」ことを伝える（V16） */
   body.running .status {
     color: #2f9e6a;
-    animation: blink 1.8s ease-in-out infinite;
+    animation: blink 4.8s ease-in-out infinite;
   }
-  /* ゆっくり暗くなって、ループの頭でパッと点く（V16） */
+  /* カートに完全同期（V16.1）。左端でパッと点灯 → 行きは速いので1.1秒でサッと暗転 →
+     右端に着いた瞬間にまたパッと点き、積み込みで停止している1.0秒はずっと点灯 →
+     帰りは2.1秒かけてゆっくり暗転（カートがゆっくり戻るのに合わせる） */
   @keyframes blink {
-    0%, 8%    { opacity: 1; }
-    75%, 100% { opacity: 0.15; }
+    0%,    2%    { opacity: 1; }
+    25%,   29.0% { opacity: 0.15; }
+    29.167%, 50% { opacity: 1; }
+    94%,   100%  { opacity: 0.15; }
   }
   .buttons {
     display: flex;
@@ -376,7 +425,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.16</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.16.1</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -415,7 +464,7 @@
     <span class="status idle" id="status">停止中</span>
     <span class="display" id="display">0分</span>
     <span class="cart-lane">
-      <span class="cart" id="cart">🛒</span>
+      <span class="cart" id="cart"><span class="load load1" id="cartLoad1">🍎</span><span class="load load2" id="cartLoad2">🥬</span><span class="load load3" id="cartLoad3">🐟</span><span class="glyph">🛒</span></span>
     </span>
   </div>
   <div class="buttons">
@@ -483,6 +532,31 @@
   const sectionListEl = document.getElementById('sectionList');
   const userNameEl = document.getElementById('userName');
   const resetAllBtn = document.getElementById('resetAllBtn');
+
+  // ---- カートに積む商品（V16.1）----
+  // 1往復（4.8秒）につき必ず3個（下2個＋上1個の三角積み）。組み合わせは1往復ごとに次の3つへ。
+  // 切り替わるのは左端＝どれも見えていない瞬間なので、入れ替わるところは見えない。
+  // 並びは売場の順（農産→水産→畜産→デリカ→グロサリ→デイリー→リカー）
+  const cartLoads = [
+    document.getElementById('cartLoad1'),
+    document.getElementById('cartLoad2'),
+    document.getElementById('cartLoad3')
+  ];
+  const LOAD_ITEMS = ['🍎', '🥬', '🐟', '🥩', '🍱', '🍞', '🧃', '🥛', '🥚', '🍺'];
+  let loadIndex = 0;
+  if (cartLoads.every(Boolean)) {
+    const applyLoadItems = () => {
+      cartLoads.forEach((el, i) => {
+        el.textContent = LOAD_ITEMS[(loadIndex + i) % LOAD_ITEMS.length];
+      });
+    };
+    applyLoadItems();
+    // load1（4.8秒サイクル）が1周するたび＝左端で荷物が空になった瞬間に次の3つへ
+    cartLoads[0].addEventListener('animationiteration', () => {
+      loadIndex = (loadIndex + 3) % LOAD_ITEMS.length;
+      applyLoadItems();
+    });
+  }
 
   // ---- Firebase（みんなで共有）----
   const firebaseConfig = {
