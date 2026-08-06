@@ -1,5 +1,5 @@
-const CACHE = 'nespaPT-v10';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.png', './icon-192.png'];
+const CACHE = 'nespaPT-v11';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.png', './icon-192.png', './icon-180.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));

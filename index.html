@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="区間計測">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
-<link rel="apple-touch-icon" href="icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 <style>
   * { box-sizing: border-box; }
@@ -184,14 +184,12 @@
     color: #2f9e6a;
     animation: blink 4.8s ease-in-out infinite;
   }
-  /* カートに完全同期（V16.1）。左端でパッと点灯 → 行きは速いので1.1秒でサッと暗転 →
-     右端に着いた瞬間にまたパッと点き、積み込みで停止している1.0秒はずっと点灯 →
-     帰りは2.1秒かけてゆっくり暗転（カートがゆっくり戻るのに合わせる） */
+  /* カートに完全同期（V16.1）。1往復＝呼吸ひとつ。
+     左端でパッと点灯 → 空で行く1.4秒＋積み込みの1.0秒は点灯キープ（＝前半2.4秒） →
+     荷物を積んで帰る2.4秒でゆっくり暗転 → 左端で荷降ろしと同時にまたパッと点灯 */
   @keyframes blink {
-    0%,    2%    { opacity: 1; }
-    25%,   29.0% { opacity: 0.15; }
-    29.167%, 50% { opacity: 1; }
-    94%,   100%  { opacity: 0.15; }
+    0%,  50%  { opacity: 1; }
+    94%, 100% { opacity: 0.15; }
   }
   .buttons {
     display: flex;
