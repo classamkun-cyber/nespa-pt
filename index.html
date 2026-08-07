@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>売場ピッキング区間計測</title>
 <meta name="theme-color" content="#101418">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,8 +15,16 @@
 <link rel="manifest" href="manifest.webmanifest">
 <style>
   * { box-sizing: border-box; }
+  /* ★htmlにも背景色を明示（bodyだけだと、Androidでアドレスバーが引っ込んで
+     画面が広がった瞬間などにbody丈が画面高より短くなり、htmlの初期背景＝白が
+     下端にはみ出して見える。2026-08-07に正人さんの実機で発見） */
+  html {
+    background: #101418;
+    height: 100%;
+  }
   body {
     margin: 0;
+    min-height: 100dvh;   /* 動的ビューポート単位＝アドレスバーの出入りでも常に画面いっぱいを確保 */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", Meiryo, sans-serif;
     background: #101418;
     color: #eaeef2;
@@ -423,7 +431,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.16.2</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.16.3</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
