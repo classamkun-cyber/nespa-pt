@@ -431,7 +431,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.16.3</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.17.0</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -668,6 +668,7 @@
   function removeLatestRecord(section) {
     for (let i = records.length - 1; i >= 0; i--) {
       if (records[i].section === section) {
+        markLogCancelled(records[i]);  // 蓄積ログ側は消さず「取消」の印だけ立てる（V17）
         records.splice(i, 1);
         saveRecords();
         updateTable();
@@ -773,6 +774,36 @@
   function formatClock(date) {
     return String(date.getHours()).padStart(2,'0') + ':' +
            String(date.getMinutes()).padStart(2,'0');
+  }
+
+  // ---- V17：記録の蓄積（分析用にログを貯める）----
+  // メンバーから見える動きはゼロ。ストップを押した瞬間に、開始・終了の生の時刻（ms）を
+  // logs/{YYYY-MM-DD}/{自動ID} にこっそり1件書くだけ。表示・操作は一切変えない。
+  function formatDateStr(date) {
+    return date.getFullYear() + '-' +
+           String(date.getMonth()+1).padStart(2,'0') + '-' +
+           String(date.getDate()).padStart(2,'0');
+  }
+  // 開始した日付を基準にする（日をまたいで計測することは想定しない）
+  function writeLog(section, name, startMs, endMs) {
+    if (!db) return null;
+    const logDate = formatDateStr(new Date(startMs));
+    try {
+      const ref = db.ref('logs/' + logDate).push();
+      ref.set({
+        区間: section,
+        名前: name || 'ゲスト',
+        開始: startMs,
+        終了: endMs,
+        取消: false
+      });
+      return { logDate, logId: ref.key };
+    } catch (e) { return null; }
+  }
+  // V14の「完了の取消」に連動して、蓄積ログ側は削除せず「取消済み」の印を立てる
+  function markLogCancelled(rec) {
+    if (!db || !rec || !rec.logDate || !rec.logId) return;
+    try { db.ref('logs/' + rec.logDate + '/' + rec.logId).update({ 取消: true }); } catch (e) {}
   }
 
   function saveRecords() {
@@ -922,11 +953,14 @@
     document.body.classList.remove('running');
     const endTime = Date.now();
     const durationMs = endTime - startTime;
+    const logRef = writeLog(currentSection, getUserName(), startTime, endTime);
     records.push({
       section: currentSection,
       startStr: formatClock(new Date(startTime)),
       endStr: formatClock(new Date(endTime)),
-      durationMs
+      durationMs,
+      logDate: logRef ? logRef.logDate : null,
+      logId: logRef ? logRef.logId : null
     });
     saveRecords();
     display.textContent = formatDuration(durationMs);
