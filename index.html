@@ -609,7 +609,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.18.0</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.18.1</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -715,11 +715,6 @@
       </select>
       <select id="chatPresetSelect">
         <option value="" selected>定型文を選ぶ▼</option>
-        <option value="ヘルプお願い🙏">ヘルプお願い🙏</option>
-        <option value="OK👍">OK👍</option>
-        <option value="追加注文入った👆">追加注文入った👆</option>
-        <option value="まとめた～🛒">まとめた～🛒</option>
-        <option value="保留で🤚">保留で🤚</option>
       </select>
     </div>
     <div class="chat-input-row">
@@ -1391,6 +1386,30 @@
         }
         renderChatBanner();
         if (chatOpen) renderChatMessages();
+      });
+    } catch (e) {}
+  }
+
+  // ---- V18.1：定型文を Firebase から動的に読み込む（正人さんの編集アプリで増減できるように）----
+  // 表示順は order 昇順。プレースホルダー（先頭の「定型文を選ぶ▼」）は常に残す。
+  function renderPresetOptions(list) {
+    const current = chatPresetSelect.value;
+    const placeholder = '<option value="" selected>定型文を選ぶ▼</option>';
+    const opts = list
+      .slice()
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .map(t => `<option value="${escapeHtml(t.text)}">${escapeHtml(t.text)}</option>`)
+      .join('');
+    chatPresetSelect.innerHTML = placeholder + opts;
+    // 選択中に更新が飛んできても、選択状態はできるだけ保つ（無ければプレースホルダーへ）
+    chatPresetSelect.value = current && [...chatPresetSelect.options].some(o => o.value === current) ? current : '';
+  }
+  if (db) {
+    try {
+      db.ref('templates').on('value', (snap) => {
+        const val = snap.val() || {};
+        const list = Object.keys(val).map(key => Object.assign({ key }, val[key]));
+        renderPresetOptions(list);
       });
     } catch (e) {}
   }
