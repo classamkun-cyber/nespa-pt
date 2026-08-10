@@ -427,11 +427,189 @@
     opacity: 0.9;
     margin-top: 2px;
   }
+
+  /* ---- V18：メンバー間のコメント（チャット）---- */
+  /* 新着バナー＝名前・区間の選択行 と 状態＋経過時間の間に配置（2026-08-10・正人さんと確定）
+     スタート／ストップから離すことで誤タップを避ける狙い */
+  .chat-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #232a33;
+    color: #8fa0b3;
+    font-size: 14px;
+    margin-bottom: 20px;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .chat-banner-icon { flex: none; }
+  .chat-banner-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* 新着あり＝緑系（ページの背景が白でも暗くても、ピル自体が色を持つので読める） */
+  .chat-banner.unread {
+    background: #1d3a2c;
+    color: #bfe8d3;
+    font-weight: 600;
+  }
+  .chat-overlay {
+    position: fixed;
+    inset: 0;
+    background: #101418;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-overlay[hidden] { display: none; }
+  .chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px;
+    border-bottom: 1px solid #232a33;
+  }
+  .chat-back {
+    flex: none;
+    width: auto;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    background: #2f9e6a;
+    color: #ffffff;
+    border-radius: 8px;
+  }
+  /* ストップ押し忘れ防止に、チャット画面にも「区間名 計測中 ◯分」を表示（Claudian提案） */
+  .chat-elapsed {
+    font-size: 14px;
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 計測中は白でメインの状態表示より少し多めに点滅させる（メイン4.8秒より短い2.4秒周期） */
+  .chat-elapsed.running {
+    animation: blink 2.4s ease-in-out infinite;
+  }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .chat-msg {
+    display: flex;
+    flex-direction: column;
+    max-width: 82%;
+  }
+  .chat-msg.mine { align-self: flex-end; align-items: flex-end; }
+  .chat-msg.other { align-self: flex-start; align-items: flex-start; }
+  .chat-msg-meta {
+    font-size: 13px;
+    color: #ffffff;
+    margin-bottom: 4px;
+  }
+  .chat-msg-to {
+    color: #ffffff;
+    margin-left: 4px;
+  }
+  .chat-msg-bubble {
+    position: relative;
+    overflow: hidden;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 15px;
+    line-height: 1.4;
+    word-break: break-word;
+    background: #232a33;
+    color: #eaeef2;
+  }
+  .chat-msg.mine .chat-msg-bubble {
+    background: #2f9e6a;
+    color: #ffffff;
+  }
+  /* 自分宛メンションの吹き出しは白背景・黒文字で強調（2026-08-10・白枠から変更） */
+  .chat-msg.mention .chat-msg-bubble {
+    background: #ffffff;
+    color: #000000;
+  }
+  /* 自分の吹き出しは長押しで削除できる（2026-08-10）。スワイプ阻害を避けるため touch-action: pan-y */
+  .chat-msg.mine .chat-msg-bubble {
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: pan-y;
+  }
+  .chat-msg-text { position: relative; z-index: 1; }
+  .chat-msg-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 0;
+    background: rgba(0,0,0,0.28);
+    z-index: 0;
+  }
+  .chat-msg-bubble.holding .chat-msg-fill {
+    width: 100%;
+    transition: width 1.0s linear;
+  }
+  .chat-hint {
+    font-size: 12px;
+    color: #5c6773;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  /* 既読件数バッジ（送信者本人を除いた人数）※名前と同じ文字サイズ・色に揃える */
+  .chat-msg-read {
+    font-size: 13px;
+    color: #ffffff;
+    margin-top: 2px;
+  }
+  .chat-empty {
+    text-align: center;
+    color: #5c6773;
+    font-size: 14px;
+    margin-top: 40px;
+  }
+  .chat-input-area {
+    padding: 12px 16px 20px;
+    border-top: 1px solid #232a33;
+  }
+  .chat-input-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .chat-input-row:last-child { margin-bottom: 0; }
+  .chat-input-row select,
+  .chat-input-row input[type="text"] {
+    margin-bottom: 0;
+  }
+  /* 宛先（左）:定型文（右） */
+  #chatToSelect { flex: 4 1 0; }
+  #chatPresetSelect { flex: 6 1 0; }
+  #chatFreeInput { flex: 1 1 0; }
+  #chatSendBtn {
+    flex: none;
+    width: auto;
+    padding: 12px 18px;
+    background: #2f9e6a;
+    color: #fff;
+  }
 </style>
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.17.0</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.18.0</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -465,6 +643,10 @@
     <option value="フリー">フリー</option>
   </select>
   </div>
+  </div>
+  <div class="chat-banner" id="chatBanner" role="button" tabindex="0">
+    <span class="chat-banner-icon">🗨</span>
+    <span class="chat-banner-text" id="chatBannerText">チャット</span>
   </div>
   <div class="display-row">
     <span class="status idle" id="status">停止中</span>
@@ -506,6 +688,43 @@
         <span class="clear-fill" id="clearFill"></span>
         <span class="clear-label">🗑 記録をクリア（長押し）</span>
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- ---- V18：チャットパネル（別ページ遷移にせず、計測画面にかぶせて表示）---- -->
+<div class="chat-overlay" id="chatOverlay" hidden>
+  <div class="chat-header">
+    <button class="chat-back" id="chatBackBtn" type="button">← 計測に戻る</button>
+    <span class="chat-elapsed" id="chatElapsed"></span>
+  </div>
+  <div class="chat-messages" id="chatMessages">
+    <div class="chat-empty" id="chatEmpty">まだメッセージはありません</div>
+  </div>
+  <div class="chat-input-area">
+    <div class="chat-hint">自分の吹き出しは長押しで削除できます</div>
+    <div class="chat-input-row">
+      <select id="chatToSelect">
+        <option value="">全員</option>
+        <option value="平野">平野</option>
+        <option value="高橋">高橋</option>
+        <option value="小松原">小松原</option>
+        <option value="奥永">奥永</option>
+        <option value="大野">大野</option>
+        <option value="服部">服部</option>
+      </select>
+      <select id="chatPresetSelect">
+        <option value="" selected>定型文を選ぶ▼</option>
+        <option value="ヘルプお願い🙏">ヘルプお願い🙏</option>
+        <option value="OK👍">OK👍</option>
+        <option value="追加注文入った👆">追加注文入った👆</option>
+        <option value="まとめた～🛒">まとめた～🛒</option>
+        <option value="保留で🤚">保留で🤚</option>
+      </select>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chatFreeInput" placeholder="自由入力...">
+      <button id="chatSendBtn" type="button">送信</button>
     </div>
   </div>
 </div>
@@ -836,6 +1055,7 @@
   function tick() {
     const elapsed = Date.now() - startTime;
     display.textContent = formatDuration(elapsed);
+    if (chatOpen) updateChatElapsed();
     rafId = requestAnimationFrame(tick);
   }
 
@@ -1025,6 +1245,226 @@
   window.addEventListener('scroll', cancelClearHold, { passive: true });
   // クリックそのものでは何も起こさない（保険）
   clearBtn.addEventListener('click', (e) => { e.preventDefault(); });
+
+  // ---- V18：メンバー間のコメント（チャット）----
+  // データは messages/{自動ID} にフラットに保存（push key が時系列順に文字列比較できるので
+  // それを既読管理にそのまま使う）。全体のお知らせ欄＝A案（正人さんと合意ずみ）。
+  const chatBanner = document.getElementById('chatBanner');
+  const chatBannerText = document.getElementById('chatBannerText');
+  const chatOverlay = document.getElementById('chatOverlay');
+  const chatBackBtn = document.getElementById('chatBackBtn');
+  const chatElapsedEl = document.getElementById('chatElapsed');
+  const chatMessagesEl = document.getElementById('chatMessages');
+  const chatEmptyEl = document.getElementById('chatEmpty');
+  const chatToSelect = document.getElementById('chatToSelect');
+  const chatPresetSelect = document.getElementById('chatPresetSelect');
+  const chatFreeInput = document.getElementById('chatFreeInput');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+
+  let chatMessages = [];   // 古い順に並べて保持（[{key, text, name, to, time}, ...]）
+  let chatOpen = false;
+  const CHAT_READ_KEY = 'nespaPT_chatLastRead';
+
+  function getChatLastRead() {
+    try { return localStorage.getItem(CHAT_READ_KEY) || ''; } catch (e) { return ''; }
+  }
+  function setChatLastRead(key) {
+    try { localStorage.setItem(CHAT_READ_KEY, key); } catch (e) {}
+  }
+
+  function renderChatBanner() {
+    const lastRead = getChatLastRead();
+    const unread = chatMessages.filter(m => m.key > lastRead);
+    if (unread.length === 0) {
+      chatBanner.className = 'chat-banner';
+      chatBannerText.textContent = 'チャット';
+      return;
+    }
+    const latest = unread[unread.length - 1];
+    const preview = (latest.name || '?') + (latest.to ? '→' + latest.to : '') + '：' + latest.text;
+    // バナーの色は宛先に関わらず一律で緑（2026-08-10・色分けは廃止してシンプルに）
+    chatBanner.className = 'chat-banner unread';
+    chatBannerText.textContent = preview + '（' + unread.length + '件）';
+  }
+
+  function renderChatMessages() {
+    if (chatMessages.length === 0) {
+      chatMessagesEl.innerHTML = '';
+      chatMessagesEl.appendChild(chatEmptyEl);
+      return;
+    }
+    const myName = getUserName();
+    let html = '';
+    chatMessages.forEach(m => {
+      const mine = m.name === myName;
+      const mentionToMe = !!(m.to && m.to === myName);
+      const cls = 'chat-msg ' + (mine ? 'mine' : 'other') + (mentionToMe ? ' mention' : '');
+      const toTag = m.to ? `<span class="chat-msg-to">→${escapeHtml(m.to)}</span>` : '';
+      const timeStr = m.time ? formatClock(new Date(m.time)) : '';
+      // 自分の吹き出しだけ data-key を持たせ、長押しで削除できるようにする（2026-08-10）
+      const bubble = mine
+        ? `<div class="chat-msg-bubble" data-key="${escapeHtml(m.key)}"><span class="chat-msg-fill"></span><span class="chat-msg-text">${escapeHtml(m.text)}</span></div>`
+        : `<div class="chat-msg-bubble">${escapeHtml(m.text)}</div>`;
+      // 既読バッジ＝送信者本人を除いた readBy の人数（LINEの「既読」と同じ考え方）
+      const readers = m.readBy ? Object.keys(m.readBy).filter(n => n !== m.name) : [];
+      const readBadge = readers.length ? `<div class="chat-msg-read">既読 ${readers.length}</div>` : '';
+      html += `<div class="${cls}">
+        <div class="chat-msg-meta">${escapeHtml(m.name || '?')} ${timeStr}${toTag}</div>
+        ${bubble}
+        ${readBadge}
+      </div>`;
+    });
+    chatMessagesEl.innerHTML = html;
+    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  }
+
+  // ---- 自分の吹き出しを長押しで削除（2026-08-10）----
+  const MSG_HOLD_MS = 1000;
+  let msgHoldTimer = null;
+  let msgHoldEl = null;
+  let msgHoldStartX = 0;
+  let msgHoldStartY = 0;
+
+  function deleteChatMessage(key) {
+    if (!db || !key) return;
+    try { db.ref('messages/' + key).remove(); } catch (e) {}
+  }
+  function startMsgHold(e) {
+    const bubble = e.target.closest('.chat-msg-bubble');
+    if (!bubble || !bubble.hasAttribute('data-key')) return;  // 自分の吹き出し以外は何もしない
+    msgHoldStartX = e.clientX;
+    msgHoldStartY = e.clientY;
+    msgHoldEl = bubble;
+    bubble.classList.add('holding');
+    msgHoldTimer = setTimeout(() => {
+      msgHoldTimer = null;
+      bubble.classList.remove('holding');
+      if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
+      deleteChatMessage(bubble.getAttribute('data-key'));
+      msgHoldEl = null;
+    }, MSG_HOLD_MS);
+  }
+  function cancelMsgHold() {
+    if (msgHoldTimer) { clearTimeout(msgHoldTimer); msgHoldTimer = null; }
+    if (msgHoldEl) msgHoldEl.classList.remove('holding');
+    msgHoldEl = null;
+  }
+  function onMsgMove(e) {
+    if (!msgHoldEl) return;
+    // 指が動いたらスクロールとみなして長押しを中止（他の長押しUIと同じ作法）
+    if (Math.abs(e.clientX - msgHoldStartX) > 8 || Math.abs(e.clientY - msgHoldStartY) > 8) {
+      cancelMsgHold();
+    }
+  }
+  chatMessagesEl.addEventListener('pointerdown', startMsgHold);
+  chatMessagesEl.addEventListener('pointermove', onMsgMove);
+  chatMessagesEl.addEventListener('pointerup', cancelMsgHold);
+  chatMessagesEl.addEventListener('pointerleave', cancelMsgHold);
+  chatMessagesEl.addEventListener('pointercancel', cancelMsgHold);
+  chatMessagesEl.addEventListener('scroll', cancelMsgHold, { passive: true });
+
+  // ---- 既読バッジ（2026-08-10）----
+  // messages/{key}/readBy/{名前} = true を立てるだけ。自分の送信分は対象外（読む必要がないので）。
+  // すでに立っているものは書き直さない（無駄な書き込みを避ける）。
+  function markMessagesRead() {
+    if (!db) return;
+    const myName = getUserName();
+    if (!myName) return;
+    chatMessages.forEach(m => {
+      if (m.name === myName) return;
+      if (m.readBy && m.readBy[myName]) return;
+      try { db.ref('messages/' + m.key + '/readBy/' + myName).set(true); } catch (e) {}
+    });
+  }
+
+  // 直近100件だけ購読（現場のやりとりが読めれば十分・古いものは追わない）
+  if (db) {
+    try {
+      db.ref('messages').limitToLast(100).on('value', (snap) => {
+        const val = snap.val() || {};
+        chatMessages = Object.keys(val).sort().map(key => Object.assign({ key }, val[key]));
+        // パネルを開いている間に届いた分（自分が今送った分も含む）はその場で既読扱いにする
+        // ＝そうしないと「今開いて送ったメッセージ」が、閉じた瞬間バナーの新着として出てしまう
+        if (chatOpen && chatMessages.length) {
+          setChatLastRead(chatMessages[chatMessages.length - 1].key);
+          markMessagesRead();
+        }
+        renderChatBanner();
+        if (chatOpen) renderChatMessages();
+      });
+    } catch (e) {}
+  }
+
+  function updateChatElapsed() {
+    if (!chatElapsedEl) return;
+    chatElapsedEl.classList.toggle('running', running);
+    chatElapsedEl.textContent = running ? (currentSection + ' 計測中 ' + display.textContent) : '';
+  }
+
+  function openChat() {
+    chatOpen = true;
+    chatOverlay.hidden = false;
+    renderChatMessages();
+    // V18初版は「開いたら既読」のシンプルな判定（正人さんと合意ずみ）
+    if (chatMessages.length) setChatLastRead(chatMessages[chatMessages.length - 1].key);
+    markMessagesRead();
+    renderChatBanner();
+    updateChatElapsed();
+    // Androidの戻るボタンでも閉じられるように履歴を1つ積む
+    try { history.pushState({ nespaPTChat: true }, ''); } catch (e) {}
+  }
+  function closeChat(fromPopstate) {
+    chatOpen = false;
+    chatOverlay.hidden = true;
+    if (!fromPopstate) {
+      try { history.back(); } catch (e) {}
+    }
+  }
+  window.addEventListener('popstate', () => {
+    if (chatOpen) closeChat(true);
+  });
+
+  chatBanner.addEventListener('click', openChat);
+  chatBanner.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openChat(); }
+  });
+  chatBackBtn.addEventListener('click', () => closeChat(false));
+
+  function sendChatMessage(text, to) {
+    const t = (text || '').trim();
+    if (!t) return;
+    if (!db) { alert('オフラインのため送信できません。ネットにつながってから再度お試しください。'); return; }
+    const payload = { text: t, name: getUserName() || 'ゲスト', time: Date.now() };
+    if (to) payload.to = to;
+    try { db.ref('messages').push(payload); } catch (e) {}
+  }
+
+  // 定型文プルダウン＝選んだ瞬間に即送信（2タップ完結）。
+  // 同じ項目を連続で選んでも change が発火するよう、送信のたびに初期表示へ戻す。
+  chatPresetSelect.addEventListener('change', () => {
+    const text = chatPresetSelect.value;
+    if (!text) return;
+    const to = chatToSelect.value || '';
+    sendChatMessage(text, to);
+    chatPresetSelect.value = '';
+    chatToSelect.value = '';   // 宛先も毎回「全員」に戻す（正人さんの依頼・2026-08-10）
+  });
+
+  chatSendBtn.addEventListener('click', () => {
+    const to = chatToSelect.value || '';
+    sendChatMessage(chatFreeInput.value, to);
+    chatFreeInput.value = '';
+    chatToSelect.value = '';
+  });
+  chatFreeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const to = chatToSelect.value || '';
+      sendChatMessage(chatFreeInput.value, to);
+      chatFreeInput.value = '';
+      chatToSelect.value = '';
+    }
+  });
 
   // 計測中に閉じた／リロードした場合、開き直したときに計測を復元して継続する（V12）
   function restoreActive() {
