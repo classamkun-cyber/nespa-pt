@@ -473,7 +473,9 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 16px;
+    /* iPhoneのステータスバー/ノッチと「← 計測に戻る」が重なりタップ不可になる不具合対策
+       （2026-08-11・高橋さん/服部さんのiPhoneで発覚）。上だけセーフエリア分の余白を追加 */
+    padding: calc(16px + env(safe-area-inset-top)) 16px 16px;
     border-bottom: 1px solid #232a33;
   }
   .chat-back {
@@ -609,7 +611,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.18.1</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.18.2</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
