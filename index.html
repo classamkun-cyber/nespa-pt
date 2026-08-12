@@ -493,6 +493,8 @@
     font-size: 14px;
     color: #ffffff;
     font-variant-numeric: tabular-nums;
+    text-align: center;
+    line-height: 1.4;
   }
   /* 計測中は白でメインの状態表示より少し多めに点滅させる（メイン4.8秒より短い2.4秒周期） */
   .chat-elapsed.running {
@@ -628,7 +630,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.0</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.1</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -1448,7 +1450,11 @@
   function updateChatElapsed() {
     if (!chatElapsedEl) return;
     chatElapsedEl.classList.toggle('running', running);
-    chatElapsedEl.textContent = running ? (currentSection + ' 計測中 ' + display.textContent) : '';
+    // 通知ボタン追加で横幅が減り、1行だと「計測中」の途中など変な位置で折り返ってしまうため、
+    // 区間名／計測中◯分の2行に固定して中央寄せする（2026-08-12・正人さん提案）
+    chatElapsedEl.innerHTML = running
+      ? escapeHtml(currentSection) + '<br>計測中 ' + escapeHtml(display.textContent)
+      : '';
   }
 
   function openChat() {
@@ -1519,13 +1525,22 @@
   // ---- V19：新着チャットのプッシュ通知 ----
   // fcmTokens/{名前}/{token} = true の形でFirebaseに登録しておくと、Cloud Functions側が
   // 新着メッセージ時に送信者以外へ配信してくれる（アプリを閉じていても・画面オフでも届く）。
+  // ボタンの緑／グレーは「実際にトークンを保存できているか」で判定する（ブラウザの許可状態だけでは
+  // 見た目と実態がズレる。2026-08-12・fcmTokensの書き込みがルール未設定で弾かれていた件で判明）。
+  const FCM_TOKEN_KEY = 'nespaPT_fcmToken';
+  const FCM_OPTOUT_KEY = 'nespaPT_fcmOptOut';
+  function getStoredToken() { try { return localStorage.getItem(FCM_TOKEN_KEY) || null; } catch (e) { return null; } }
+  function setStoredToken(t) { try { t ? localStorage.setItem(FCM_TOKEN_KEY, t) : localStorage.removeItem(FCM_TOKEN_KEY); } catch (e) {} }
+  function isOptedOut() { try { return localStorage.getItem(FCM_OPTOUT_KEY) === '1'; } catch (e) { return false; } }
+  function setOptedOut(v) { try { v ? localStorage.setItem(FCM_OPTOUT_KEY, '1') : localStorage.removeItem(FCM_OPTOUT_KEY); } catch (e) {} }
+
   function updateNotifBtn() {
     if (!notifBtn) return;
     if (!('Notification' in window) || !messaging) {
       notifBtn.classList.add('unsupported');
       return;
     }
-    if (Notification.permission === 'granted') {
+    if (getStoredToken() && Notification.permission === 'granted') {
       notifBtn.textContent = '🔔 通知オン';
       notifBtn.classList.add('on');
     } else {
@@ -1550,15 +1565,35 @@
       .then((token) => {
         if (!token) return;
         currentFcmToken = token;
+        setStoredToken(token);
         syncFcmToken(token);
+        updateNotifBtn();
       })
       .catch((e) => { console.warn('FCMトークン取得に失敗', e); });
+  }
+
+  // 通知オフに切り替える：Firebase側の自分のトークンを消して、以後の自動再登録も止める
+  function disableNotifications() {
+    const token = getStoredToken();
+    const myName = getUserName();
+    if (db && token && myName) {
+      try { db.ref('fcmTokens/' + fbKey(myName) + '/' + token).remove(); } catch (e) {}
+    }
+    currentFcmToken = null;
+    setStoredToken(null);
+    setOptedOut(true);
+    updateNotifBtn();
   }
 
   if (notifBtn) {
     notifBtn.addEventListener('click', async () => {
       if (!('Notification' in window) || !messaging) {
         alert('この端末・ブラウザは通知に対応していません');
+        return;
+      }
+      // 既にオン（トークン登録済み）なら、押すたびにオフへトグル
+      if (getStoredToken() && Notification.permission === 'granted') {
+        disableNotifications();
         return;
       }
       try {
@@ -1568,6 +1603,7 @@
           alert('通知が許可されませんでした。あとで端末の通知設定から許可することもできます。');
           return;
         }
+        setOptedOut(false);
         if (!swRegistration) swRegistration = await navigator.serviceWorker.ready;
         refreshFcmToken();
       } catch (e) {
@@ -1630,7 +1666,7 @@
       navigator.serviceWorker.register('sw.js').then((reg) => {
         swRegistration = reg;
         // この端末で既に通知が許可済みなら、ページを開くたびに静かにトークンを最新化しておく
-        if ('Notification' in window && Notification.permission === 'granted') refreshFcmToken();
+        if ('Notification' in window && Notification.permission === 'granted' && !isOptedOut()) refreshFcmToken();
       }).catch(() => {});
     });
   }
