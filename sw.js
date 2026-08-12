@@ -1,4 +1,4 @@
-const CACHE = 'nespaPT-v18.2';
+const CACHE = 'nespaPT-v19.0';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.png', './icon-192.png', './icon-180.png'];
 
 self.addEventListener('install', (e) => {
@@ -20,5 +20,51 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
     caches.match(e.request).then((r) => r || fetch(e.request))
+  );
+});
+
+// ---- V19：新着チャットのプッシュ通知（バックグラウンド受信）----
+// アプリを閉じている／画面オフのときでも、Cloud Functionsから送られてきたpushをここで受け取って表示する。
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: "AIzaSyCzrEc7e9qGPH_2PogrZfFSH8H5Z035aV0",
+  authDomain: "nespa-pt.firebaseapp.com",
+  databaseURL: "https://nespa-pt-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "nespa-pt",
+  storageBucket: "nespa-pt.firebasestorage.app",
+  messagingSenderId: "247771639596",
+  appId: "1:247771639596:web:3b980f4ce44613ed6b0689"
+});
+
+try {
+  const messaging = firebase.messaging();
+  messaging.onBackgroundMessage((payload) => {
+    const title = (payload.notification && payload.notification.title) || 'チャット';
+    const body = (payload.notification && payload.notification.body) || '';
+    const link = (payload.fcmOptions && payload.fcmOptions.link) || './';
+    self.registration.showNotification(title, {
+      body,
+      icon: './icon-192.png',
+      badge: './icon-192.png',
+      data: { url: link },
+    });
+  });
+} catch (e) {
+  // 対応してないブラウザ等ではここで静かに無視（キャッシュ機能自体は影響しない）
+}
+
+// 通知をタップしたら、開いているタブがあればそこにフォーカス、無ければ新しく開く
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || './';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(url);
+    })
   );
 });

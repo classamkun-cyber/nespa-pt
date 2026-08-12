@@ -498,6 +498,23 @@
   .chat-elapsed.running {
     animation: blink 2.4s ease-in-out infinite;
   }
+  /* 新着メッセージのプッシュ通知（V19）を許可するボタン。許可済みは控えめに、未許可は目立たせる */
+  .notif-btn {
+    flex: none;
+    width: auto;
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+    border: 1px solid #2a323b;
+    background: #1d232b;
+    color: #8fa0b3;
+  }
+  .notif-btn.on {
+    background: #17301f;
+    color: #7fd39a;
+    border-color: #2f9e6a;
+  }
+  .notif-btn.unsupported { display: none; }
   .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -611,7 +628,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.18.2</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.0</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -699,6 +716,7 @@
   <div class="chat-header">
     <button class="chat-back" id="chatBackBtn" type="button">← 計測に戻る</button>
     <span class="chat-elapsed" id="chatElapsed"></span>
+    <button class="notif-btn" id="notifBtn" type="button">🔔 通知オフ</button>
   </div>
   <div class="chat-messages" id="chatMessages">
     <div class="chat-empty" id="chatEmpty">まだメッセージはありません</div>
@@ -728,6 +746,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 <script>
   let running = false;
   let startTime = null;
@@ -790,6 +809,12 @@
     messagingSenderId: "247771639596",
     appId: "1:247771639596:web:3b980f4ce44613ed6b0689"
   };
+  // 新着チャットのプッシュ通知（V19）に使うWeb Push証明書の公開鍵。
+  // Firebaseコンソール → プロジェクト設定 → Cloud Messaging → ウェブ構成 → 「鍵ペアを生成」で発行したものを設定する。
+  const VAPID_KEY = "BMPStQYo_XSnzijGlGPs7O6xvLTqOz06YVJnjvUsYd4gwEaAA5SVKPwfoYC5vnYRYLuAqEqpz209gBhKcuqxEmw";
+
+  let messaging = null;
+  let swRegistration = null;
   try {
     if (typeof firebase !== 'undefined') {
       firebase.initializeApp(firebaseConfig);
@@ -798,6 +823,9 @@
         sharedStatus = snap.val() || {};
         renderSections();
       });
+      if (firebase.messaging) {
+        try { messaging = firebase.messaging(); } catch (e) { messaging = null; }
+      }
     }
   } catch (e) { db = null; }
 
@@ -1257,6 +1285,7 @@
   const chatPresetSelect = document.getElementById('chatPresetSelect');
   const chatFreeInput = document.getElementById('chatFreeInput');
   const chatSendBtn = document.getElementById('chatSendBtn');
+  const notifBtn = document.getElementById('notifBtn');
 
   let chatMessages = [];   // 古い順に並べて保持（[{key, text, name, to, time}, ...]）
   let chatOpen = false;
@@ -1487,6 +1516,73 @@
     }
   });
 
+  // ---- V19：新着チャットのプッシュ通知 ----
+  // fcmTokens/{名前}/{token} = true の形でFirebaseに登録しておくと、Cloud Functions側が
+  // 新着メッセージ時に送信者以外へ配信してくれる（アプリを閉じていても・画面オフでも届く）。
+  function updateNotifBtn() {
+    if (!notifBtn) return;
+    if (!('Notification' in window) || !messaging) {
+      notifBtn.classList.add('unsupported');
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      notifBtn.textContent = '🔔 通知オン';
+      notifBtn.classList.add('on');
+    } else {
+      notifBtn.textContent = '🔔 通知オフ';
+      notifBtn.classList.remove('on');
+    }
+  }
+
+  // 取得したトークンを、今入力されている名前に紐づけて保存する（名前が空ならスキップ＝あとで名前欄変更時に再同期）
+  function syncFcmToken(token) {
+    if (!db || !token) return;
+    const myName = getUserName();
+    if (!myName) return;
+    try { db.ref('fcmTokens/' + fbKey(myName) + '/' + token).set(true); } catch (e) {}
+  }
+
+  let currentFcmToken = null;
+  function refreshFcmToken() {
+    if (!messaging || !swRegistration) return;
+    if (!VAPID_KEY || VAPID_KEY.indexOf('PLACEHOLDER') === 0) return; // 鍵未設定のうちは何もしない
+    messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swRegistration })
+      .then((token) => {
+        if (!token) return;
+        currentFcmToken = token;
+        syncFcmToken(token);
+      })
+      .catch((e) => { console.warn('FCMトークン取得に失敗', e); });
+  }
+
+  if (notifBtn) {
+    notifBtn.addEventListener('click', async () => {
+      if (!('Notification' in window) || !messaging) {
+        alert('この端末・ブラウザは通知に対応していません');
+        return;
+      }
+      try {
+        const permission = await Notification.requestPermission();
+        updateNotifBtn();
+        if (permission !== 'granted') {
+          alert('通知が許可されませんでした。あとで端末の通知設定から許可することもできます。');
+          return;
+        }
+        if (!swRegistration) swRegistration = await navigator.serviceWorker.ready;
+        refreshFcmToken();
+      } catch (e) {
+        alert('通知の設定に失敗しました: ' + e.message);
+      }
+    });
+  }
+
+  // 名前を選び直した／変えたときも、既に通知オンならそのトークンを新しい名前に登録し直す
+  userNameEl.addEventListener('change', () => {
+    if (currentFcmToken) syncFcmToken(currentFcmToken);
+  });
+
+  updateNotifBtn();
+
   // 計測中に閉じた／リロードした場合、開き直したときに計測を復元して継続する（V12）
   function restoreActive() {
     let raw = null;
@@ -1531,7 +1627,11 @@
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      navigator.serviceWorker.register('sw.js').then((reg) => {
+        swRegistration = reg;
+        // この端末で既に通知が許可済みなら、ページを開くたびに静かにトークンを最新化しておく
+        if ('Notification' in window && Notification.permission === 'granted') refreshFcmToken();
+      }).catch(() => {});
     });
   }
 </script>
