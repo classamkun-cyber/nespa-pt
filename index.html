@@ -630,7 +630,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.1</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.2</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -1550,11 +1550,14 @@
   }
 
   // 取得したトークンを、今入力されている名前に紐づけて保存する（名前が空ならスキップ＝あとで名前欄変更時に再同期）
+  // 名前ごとに常に「今の1トークンだけ」を持つように、ノードごと置き換える（追加ではなく上書き）。
+  // 追加式だと、通知の許可し直しやService Worker更新のたびに古いトークンが残り続け、
+  // 同じ端末に何重にも通知が届いてしまう（2026-08-12・実機テストで発覚）。
   function syncFcmToken(token) {
     if (!db || !token) return;
     const myName = getUserName();
     if (!myName) return;
-    try { db.ref('fcmTokens/' + fbKey(myName) + '/' + token).set(true); } catch (e) {}
+    try { db.ref('fcmTokens/' + fbKey(myName)).set({ [token]: true }); } catch (e) {}
   }
 
   let currentFcmToken = null;
