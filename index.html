@@ -630,7 +630,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.3</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.4</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -775,6 +775,19 @@
   const sectionListEl = document.getElementById('sectionList');
   const userNameEl = document.getElementById('userName');
   const resetAllBtn = document.getElementById('resetAllBtn');
+
+  // 前回選んだ名前を端末に覚えておき、次回起動時も自動で選択する（触らないと先頭の「平野」になってしまい、
+  // 通知トークンの名前とズレる事故につながっていたため。2026-08-12）
+  const USER_NAME_KEY = 'nespaPT_userName';
+  try {
+    const savedName = localStorage.getItem(USER_NAME_KEY);
+    if (savedName && [...userNameEl.options].some(o => o.value === savedName)) {
+      userNameEl.value = savedName;
+    }
+  } catch (e) {}
+  userNameEl.addEventListener('change', () => {
+    try { localStorage.setItem(USER_NAME_KEY, userNameEl.value); } catch (e) {}
+  });
 
   // ---- カートに積む商品（V16.1）----
   // 1往復（4.8秒）につき必ず3個（下2個＋上1個の三角積み）。組み合わせは1往復ごとに次の3つへ。
@@ -1553,11 +1566,23 @@
   // 名前ごとに常に「今の1トークンだけ」を持つように、ノードごと置き換える（追加ではなく上書き）。
   // 追加式だと、通知の許可し直しやService Worker更新のたびに古いトークンが残り続け、
   // 同じ端末に何重にも通知が届いてしまう（2026-08-12・実機テストで発覚）。
+  const FCM_NAME_KEY = 'nespaPT_fcmName'; // この端末が最後にどの名前でトークンを登録したか
+  function getStoredFcmName() { try { return localStorage.getItem(FCM_NAME_KEY) || null; } catch (e) { return null; } }
+  function setStoredFcmName(n) { try { n ? localStorage.setItem(FCM_NAME_KEY, n) : localStorage.removeItem(FCM_NAME_KEY); } catch (e) {} }
+
   function syncFcmToken(token) {
     if (!db || !token) return;
     const myName = getUserName();
     if (!myName) return;
+    const oldName = getStoredFcmName();
+    // 名前欄を切り替えた場合、古い名前側に残った同じトークンを消す
+    // （消さないと同じ端末が2つの名前に二重登録され、他の人からのメッセージが2回届いてしまう。
+    //  2026-08-12・大野さん/服部さんのメッセージが正人さんの端末に2回届く事象で発覚）
+    if (oldName && oldName !== myName) {
+      try { db.ref('fcmTokens/' + fbKey(oldName) + '/' + token).remove(); } catch (e) {}
+    }
     try { db.ref('fcmTokens/' + fbKey(myName)).set({ [token]: true }); } catch (e) {}
+    setStoredFcmName(myName);
   }
 
   let currentFcmToken = null;
@@ -1573,6 +1598,30 @@
         updateNotifBtn();
       })
       .catch((e) => { console.warn('FCMトークン取得に失敗', e); });
+  }
+
+  // アプリを開くたびに、ボタンの表示（ローカルの記録）とFirebase側の実データを突き合わせる。
+  // ズレていたら（手動削除・無効化された等）自動で取り直して登録し直す（2026-08-12・
+  // 「表示がオンでも実際には届かない」ズレが起こり得ると気づいたための対策）。
+  function verifyAndSyncFcmToken() {
+    const myName = getUserName();
+    const storedToken = getStoredToken();
+    if (!db || !myName || !storedToken) { refreshFcmToken(); return; }
+    db.ref('fcmTokens/' + fbKey(myName) + '/' + storedToken).once('value')
+      .then((snap) => {
+        if (snap.val() === true) {
+          // Firebase側にも同じトークンが生きている＝表示と実態が一致
+          currentFcmToken = storedToken;
+          updateNotifBtn();
+        } else {
+          console.log('通知トークンがFirebase側と一致しないため再登録します');
+          refreshFcmToken();
+        }
+      })
+      .catch((e) => {
+        console.warn('通知トークンの確認に失敗、念のため取り直します', e);
+        refreshFcmToken();
+      });
   }
 
   // 通知オフに切り替える：Firebase側の自分のトークンを消して、以後の自動再登録も止める
@@ -1668,8 +1717,8 @@
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').then((reg) => {
         swRegistration = reg;
-        // この端末で既に通知が許可済みなら、ページを開くたびに静かにトークンを最新化しておく
-        if ('Notification' in window && Notification.permission === 'granted' && !isOptedOut()) refreshFcmToken();
+        // この端末で既に通知が許可済みなら、ページを開くたびにFirebase側の実データと突き合わせて確認・修復する
+        if ('Notification' in window && Notification.permission === 'granted' && !isOptedOut()) verifyAndSyncFcmToken();
       }).catch(() => {});
     });
   }
