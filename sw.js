@@ -1,4 +1,4 @@
-const CACHE = 'nespaPT-v19.2';
+const CACHE = 'nespaPT-v19.3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.png', './icon-192.png', './icon-180.png'];
 
 self.addEventListener('install', (e) => {
@@ -40,13 +40,17 @@ firebase.initializeApp({
 
 try {
   const messaging = firebase.messaging();
+  // Cloud Functions側は notification を含めず data だけを送ってくる（二重通知を防ぐため）。
+  // なので payload.notification ではなく payload.data から組み立てる。
   messaging.onBackgroundMessage((payload) => {
-    const title = (payload.notification && payload.notification.title) || 'チャット';
-    const body = (payload.notification && payload.notification.body) || '';
-    const link = (payload.fcmOptions && payload.fcmOptions.link) || './';
+    const data = payload.data || {};
+    const title = data.title || 'チャット';
+    const body = data.body || '';
+    const link = data.link || './';
+    const icon = data.icon || './icon-192.png';
     self.registration.showNotification(title, {
       body,
-      icon: './icon-192.png',
+      icon,
       badge: './icon-192.png',
       data: { url: link },
     });
