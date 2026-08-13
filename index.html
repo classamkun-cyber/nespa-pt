@@ -319,6 +319,22 @@
     color: #8fa0b3;
     margin-bottom: 12px;
   }
+  /* V19.5：まだFirebaseに送れていない記録の件数。合計時間と同じ黄色＝「まだ終わっていない」を表す。
+     行を増やさず「区間の状況」の見出し行の右端に置く（縦スペースを縮めない方針・2026-08-11） */
+  .outbox-badge {
+    color: #ffd479;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    margin-left: 8px;
+  }
+  .outbox-badge[hidden] { display: none; }
+  /* 自分がストップしたのに送信できていない区間＝他の人からは「計測中」のまま固まって見える区間 */
+  .chip.pending {
+    border-color: #ffd479;
+    border-style: dashed;
+  }
+  .chip .pending-mark { color: #ffd479; }
   .section-hint {
     font-size: 13px;
     color: #5c6773;
@@ -630,7 +646,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.4</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.5</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -683,6 +699,7 @@
   <div class="section-status">
     <div class="section-status-header">
       <span>区間の状況（緑＝計測中　赤＝完了・注文なし）</span>
+      <span class="outbox-badge" id="outboxBadge" role="button" tabindex="0" hidden></span>
     </div>
     <div class="chips" id="sectionList"></div>
     <div class="section-hint">区間を長押し→「注文なし」に<br>赤を長押し→取消（完了は記録も削除）</div>
@@ -814,6 +831,85 @@
     });
   }
 
+  // ---- V19.5：未送信キュー（回線が不安定でも記録を落とさないための保険）----
+  // Firebaseは通信が切れても書き込みをキューして再接続時に送ってくれるが、そのキューは「メモリの中」にしかない。
+  // スマホがアプリを裏に回してプロセスごと落とすと、送れていない書き込みは丸ごと消える（2026-08-13に実際に発生）。
+  // → 送る前にlocalStorageへ「未送信」の控えを残し、送信が成功したら消す。残っていれば後で自動的に再送する。
+  const OUTBOX_KEY = 'nespaPT_outbox';
+  // ★logsとstatusで再送のルールを変える。
+  //   logs（実績そのもの）＝何日経っても送る価値がある。同じキーに上書きするだけなので重複しない。
+  //   status（区間の共有状態）＝「今どうなっているか」の情報。時間が経ってから送ると、その間に別の人が
+  //   始めた計測を消してしまう。だから古くなったら送るのを諦める。
+  const STATUS_STALE_MS = 10 * 60 * 1000;
+  const outboxBadge = document.getElementById('outboxBadge');
+  let outbox = [];
+
+  function loadOutbox() {
+    try {
+      const raw = localStorage.getItem(OUTBOX_KEY);
+      outbox = raw ? (JSON.parse(raw) || []) : [];
+    } catch (e) { outbox = []; }
+  }
+  function saveOutbox() {
+    try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); } catch (e) {}
+  }
+  function outboxGet(id) { return outbox.find(x => x.id === id) || null; }
+  function outboxPut(entry) {
+    // 同じidが既にあれば置き換える（statusは最新の状態だけ送れば十分なので積み上げない）
+    const i = outbox.findIndex(x => x.id === entry.id);
+    if (i >= 0) outbox[i] = entry; else outbox.push(entry);
+    saveOutbox();
+    updateOutboxUi();
+  }
+  function outboxRemove(id) {
+    const i = outbox.findIndex(x => x.id === id);
+    if (i >= 0) { outbox.splice(i, 1); saveOutbox(); updateOutboxUi(); }
+  }
+
+  // 1件送る。成功したらキューから消す。失敗したら残す（次の機会に再送される）
+  function trySend(entry) {
+    if (!db || !entry) return Promise.resolve(false);
+    if (entry.kind === 'status' || entry.kind === 'status-remove') {
+      if (Date.now() - entry.at > STATUS_STALE_MS) { outboxRemove(entry.id); return Promise.resolve(false); }
+      // 送る直前にサーバー側を確認し、自分以外の人が触っていたら諦める（他人の計測中を消さないため）
+      return db.ref(entry.path).once('value').then(snap => {
+        const cur = snap.val();
+        const me = entry.data ? entry.data.by : entry.by;
+        if (cur && cur.by && me && cur.by !== me) { outboxRemove(entry.id); return false; }
+        const op = entry.kind === 'status-remove'
+          ? db.ref(entry.path).remove()
+          : db.ref(entry.path).set(entry.data);
+        return op.then(() => { outboxRemove(entry.id); return true; });
+      }).catch(() => false);
+    }
+    // logs＝pushで作ったキーに向けて書くので、何度送っても同じ場所に上書きされるだけ（重複しない）
+    return db.ref(entry.path).set(entry.data)
+      .then(() => { outboxRemove(entry.id); return true; })
+      .catch(() => false);
+  }
+
+  function flushOutbox() {
+    if (!db || outbox.length === 0) return;
+    outbox.slice().forEach(entry => { trySend(entry); });
+  }
+
+  // 未送信の件数表示と、区間チップ側の印を更新する
+  function updateOutboxUi() {
+    if (outboxBadge) {
+      if (outbox.length === 0) {
+        outboxBadge.hidden = true;
+        outboxBadge.textContent = '';
+      } else {
+        outboxBadge.hidden = false;
+        outboxBadge.textContent = '⚠️ 未送信 ' + outbox.length + '件（タップで再送）';
+      }
+    }
+    if (typeof renderSections === 'function') renderSections();
+  }
+
+  // 「自分がストップしたのに、その完了がまだ送れていない区間」を調べる（＝他の人からは計測中のまま見える区間）
+  function pendingStatusEntry(section) { return outboxGet('status:' + fbKey(section)); }
+
   // ---- Firebase（みんなで共有）----
   const firebaseConfig = {
     apiKey: "AIzaSyCzrEc7e9qGPH_2PogrZfFSH8H5Z035aV0",
@@ -937,22 +1033,15 @@
   }
 
   function applyChipLongPress(section, state) {
-    const key = fbKey(section);
     if (state === 'done' || state === 'skip') {
       // 赤 → グレー（未着手）に戻す
-      if (db) { try { db.ref('status/' + key).remove(); } catch (e) {} }
+      removeStatus(section);
       // 「完了」を取り消すときは、対応する記録一覧も1件消す
       if (state === 'done') removeLatestRecord(section);
     } else {
       // グレー（未着手）→「注文なし」（赤）
       if (db) {
-        try {
-          db.ref('status/' + key).set({
-            state: 'skip',
-            by: getUserName() || '誰か',
-            at: formatClock(new Date())
-          });
-        } catch (e) {}
+        writeStatus(section, 'skip', Date.now());
       } else {
         alert('オフラインのため共有できません。ネットにつながってから再度お試しください。');
       }
@@ -1048,21 +1137,73 @@
     if (!db) return null;
     const logDate = formatDateStr(new Date(startMs));
     try {
+      // push()はキーを端末側だけで作れる（通信不要）。先にキーを確保しておくことで、
+      // 何度再送しても同じ場所に書くことになり、記録が重複しない（V19.5）
       const ref = db.ref('logs/' + logDate).push();
-      ref.set({
+      const data = {
         区間: section,
         名前: name || 'ゲスト',
         開始: startMs,
         終了: endMs,
         取消: false
-      });
+      };
+      // ★送る前に控えを残す。送信が成功したときだけ消える
+      const entry = { id: 'log:' + logDate + '/' + ref.key, kind: 'log', path: 'logs/' + logDate + '/' + ref.key, data, at: Date.now() };
+      outboxPut(entry);
+      trySend(entry);
       return { logDate, logId: ref.key };
     } catch (e) { return null; }
   }
   // V14の「完了の取消」に連動して、蓄積ログ側は削除せず「取消済み」の印を立てる
   function markLogCancelled(rec) {
     if (!db || !rec || !rec.logDate || !rec.logId) return;
+    const id = 'log:' + rec.logDate + '/' + rec.logId;
+    const pending = outboxGet(id);
+    if (pending) {
+      // ★まだ送れていないログなら、キューの中身自体を「取消済み」に書き換える（V19.5）。
+      //   ここで取消だけ別に送ってしまうと、あとからログ本体が再送されたときに 取消:false で
+      //   丸ごと上書きされ、取り消したはずの記録が復活してしまう。
+      pending.data.取消 = true;
+      pending.at = Date.now();
+      outboxPut(pending);
+      trySend(pending);
+      return;
+    }
     try { db.ref('logs/' + rec.logDate + '/' + rec.logId).update({ 取消: true }); } catch (e) {}
+  }
+
+  // 区間の共有状態（status）の書き込み。スタート・ストップ・復元の3箇所から使う（V19.5で共通化）
+  function writeStatus(section, state, atMs) {
+    if (!db) return;
+    const path = 'status/' + fbKey(section);
+    const entry = {
+      id: 'status:' + fbKey(section),
+      kind: 'status',
+      path,
+      data: { state, by: getUserName() || '誰か', at: formatClock(new Date(atMs)) },
+      at: Date.now(),
+      section
+    };
+    outboxPut(entry);
+    trySend(entry);
+  }
+
+  // 区間の状態を消す（長押しでの「取消」＝赤→グレーに戻す）。V19.5で未送信キュー経由に変更。
+  // ★idを writeStatus と共通の 'status:区間' にしてあるのが肝＝まだ送れていない done/skip が
+  //   残っていた場合、この取消エントリがそれを置き換える。別途「打ち消す処理」を書かなくても、
+  //   キューの仕組みだけで「取り消したのに古い完了が後から復活する」事故が起きなくなる。
+  function removeStatus(section) {
+    if (!db) return;
+    const entry = {
+      id: 'status:' + fbKey(section),
+      kind: 'status-remove',
+      path: 'status/' + fbKey(section),
+      by: getUserName() || '誰か',
+      at: Date.now(),
+      section
+    };
+    outboxPut(entry);
+    trySend(entry);
   }
 
   function saveRecords() {
@@ -1125,6 +1266,18 @@
           const parts = [who, when].filter(Boolean).join(' ');
           if (parts) meta = `<small>${parts}</small>`;
         }
+      }
+      // V19.5：自分の書き込みがまだ送れていない区間には点線枠と印を出す。
+      // 「ストップしたのに他の人からは計測中のまま見えている」状態を、その場で気づけるようにするため。
+      const pend = pendingStatusEntry(opt.value);
+      if (pend) {
+        cls += ' pending';
+        let what = '状態';
+        if (pend.kind === 'status-remove') what = '取消';
+        else if (pend.data && pend.data.state === 'done') what = '完了';
+        else if (pend.data && pend.data.state === 'active') what = '計測中';
+        else if (pend.data && pend.data.state === 'skip') what = '注文なし';
+        meta = `<small><span class="pending-mark">⚠️${what}が未送信</span></small>`;
       }
       // 未着手（グレー）でも1行分のスペースを確保して高さを揃える（V15）
       if (!meta) meta = '<small>&nbsp;</small>';
@@ -1192,15 +1345,7 @@
     cart.classList.add('active');
     document.body.classList.add('running');
     saveActive();
-    if (db) {
-      try {
-        db.ref('status/' + fbKey(currentSection)).set({
-          state: 'active',
-          by: getUserName() || '誰か',
-          at: formatClock(new Date(startTime))
-        });
-      } catch (e) {}
-    }
+    writeStatus(currentSection, 'active', startTime);
     tick();
   });
 
@@ -1231,15 +1376,7 @@
     startBtn.disabled = false;
     stopBtn.disabled = true;
     clearBtn.disabled = false;
-    if (db) {
-      try {
-        db.ref('status/' + fbKey(currentSection)).set({
-          state: 'done',
-          by: getUserName() || '誰か',
-          at: formatClock(new Date(endTime))
-        });
-      } catch (e) {}
-    }
+    writeStatus(currentSection, 'done', endTime);
     updateTable();
   });
 
@@ -1697,21 +1834,44 @@
     document.body.classList.add('running');
 
     // 共有側にも「計測中」を再登録（開始時刻はそのまま維持）
-    if (db) {
-      try {
-        db.ref('status/' + fbKey(currentSection)).set({
-          state: 'active',
-          by: getUserName() || '誰か',
-          at: formatClock(new Date(startTime))
-        });
-      } catch (e) {}
-    }
+    writeStatus(currentSection, 'active', startTime);
     tick();
   }
 
   loadRecords();
+  // ★未送信の控えは、計測状態の復元より先に読み込む（復元でstatusを書くときキューを正しく引き継ぐため）
+  loadOutbox();
+  updateOutboxUi();
   updateTable();
   restoreActive();
+
+  // ---- V19.5：再送のきっかけ（どれか1つでも拾えれば記録は復活する）----
+  flushOutbox();
+  // Firebaseが「つながった」と判断した瞬間。回線復帰の検知としてはこれが一番あてになる
+  if (db) {
+    try { db.ref('.info/connected').on('value', (s) => { if (s.val()) flushOutbox(); }); } catch (e) {}
+  }
+  // 端末側のオンライン復帰イベント
+  window.addEventListener('online', flushOutbox);
+  // アプリが裏から表に戻ってきたとき（スマホはここが実質の再開点になる）
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) flushOutbox(); });
+  // 上のどれも拾えなかった場合の保険
+  setInterval(flushOutbox, 30000);
+
+  // 未送信バッジをタップしたら、その場でもう一度送ってみる
+  if (outboxBadge) {
+    const manualFlush = () => {
+      if (outbox.length === 0) return;
+      flushOutbox();
+      // 送信は非同期なので、少し待ってから結果を見て伝える
+      setTimeout(() => {
+        if (outbox.length === 0) alert('未送信の記録をすべて送信しました。');
+        else alert('まだ ' + outbox.length + '件 送信できていません。電波が届く場所でもう一度お試しください。');
+      }, 1500);
+    };
+    outboxBadge.addEventListener('click', manualFlush);
+    outboxBadge.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); manualFlush(); } });
+  }
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
