@@ -646,7 +646,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.5</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.8</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -843,6 +843,13 @@
   const STATUS_STALE_MS = 10 * 60 * 1000;
   const outboxBadge = document.getElementById('outboxBadge');
   let outbox = [];
+  // ★V19.7で追加＝「今オンラインだと確実に分かっているか」の自前フラグ。
+  // .set()は呼んだ瞬間にFirebase自身がその配達を引き受けてしまい、オフライン中に呼んでも
+  // SDKの内部キューに積まれて、後で"私のチェックを一切通さずに"自動で配達されてしまう
+  // （2026-08-13〜14、多人数シナリオの実機テストで発覚＝送る直前の確認だけでは守れなかった）。
+  // → オフラインだと分かっている間は.set()/.remove()自体を呼ばない。オンラインだと確実に
+  //   分かってから初めて呼ぶことで、書く瞬間には必ずこちらのチェックを通すようにする。
+  let isConnected = navigator.onLine;
 
   function loadOutbox() {
     try {
@@ -871,15 +878,21 @@
     if (!db || !entry) return Promise.resolve(false);
     if (entry.kind === 'status' || entry.kind === 'status-remove') {
       if (Date.now() - entry.at > STATUS_STALE_MS) { outboxRemove(entry.id); return Promise.resolve(false); }
-      // 送る直前にサーバー側を確認し、自分以外の人が触っていたら諦める（他人の計測中を消さないため）
-      return db.ref(entry.path).once('value').then(snap => {
-        const cur = snap.val();
-        const me = entry.data ? entry.data.by : entry.by;
-        if (cur && cur.by && me && cur.by !== me) { outboxRemove(entry.id); return false; }
-        const op = entry.kind === 'status-remove'
-          ? db.ref(entry.path).remove()
-          : db.ref(entry.path).set(entry.data);
-        return op.then(() => { outboxRemove(entry.id); return true; });
+      // ★V19.8：once('value')→set() の2段階をやめ、transaction() に変更。
+      // 守るべきは「相手が"今まさに計測中"のときだけ」（by不一致だけで弾くとV19.6で見た別の誤爆＝
+      // 完了済み区間に新しく計測を始めようとした人まで弾いてしまう問題を起こすので、state==='active'限定）。
+      // ★once('value')だと、再接続した"その瞬間"はまだローカルの古いキャッシュしか同期できておらず、
+      // 相手の書き込みを見落として上書きしてしまうことが2026-08-13/14の実機テストで繰り返し発覚した。
+      // transaction()はサーバー側が持つ本当に最新の値を使って毎回判定し直してくれる
+      // （ズレていたら自動でやり直す）ため、この「再接続直後の一瞬」にも強い。
+      const me = entry.data ? entry.data.by : entry.by;
+      const newValue = entry.kind === 'status-remove' ? null : entry.data;
+      return db.ref(entry.path).transaction((cur) => {
+        if (cur && cur.state === 'active' && cur.by && cur.by !== me) return; // undefined=中断（書き換えない）
+        return newValue; // nullを返すと削除＝取消(status-remove)と同じ効果
+      }).then((result) => {
+        outboxRemove(entry.id);
+        return !!result.committed;
       }).catch(() => false);
     }
     // logs＝pushで作ったキーに向けて書くので、何度送っても同じ場所に上書きされるだけ（重複しない）
@@ -889,7 +902,10 @@
   }
 
   function flushOutbox() {
-    if (!db || outbox.length === 0) return;
+    // ★オンラインだと確実に分かっているときだけ試みる（isConnectedがまだ未確定/falseなら何もしない）。
+    // ここで妥協してオフラインのまま.set()を呼んでしまうと、SDKの内部キューに積まれて
+    // 冒頭のコメント通りの事故が起きる。
+    if (!db || !isConnected || outbox.length === 0) return;
     outbox.slice().forEach(entry => { trySend(entry); });
   }
 
@@ -1147,10 +1163,11 @@
         終了: endMs,
         取消: false
       };
-      // ★送る前に控えを残す。送信が成功したときだけ消える
+      // ★送る前に控えを残す。送信が成功したときだけ消える。
+      // 実際に送るかどうかは flushOutbox() の isConnected 判定に任せる（オフライン中に.set()を呼ばないため）
       const entry = { id: 'log:' + logDate + '/' + ref.key, kind: 'log', path: 'logs/' + logDate + '/' + ref.key, data, at: Date.now() };
       outboxPut(entry);
-      trySend(entry);
+      flushOutbox();
       return { logDate, logId: ref.key };
     } catch (e) { return null; }
   }
@@ -1166,7 +1183,7 @@
       pending.data.取消 = true;
       pending.at = Date.now();
       outboxPut(pending);
-      trySend(pending);
+      flushOutbox();
       return;
     }
     try { db.ref('logs/' + rec.logDate + '/' + rec.logId).update({ 取消: true }); } catch (e) {}
@@ -1185,7 +1202,7 @@
       section
     };
     outboxPut(entry);
-    trySend(entry);
+    flushOutbox();
   }
 
   // 区間の状態を消す（長押しでの「取消」＝赤→グレーに戻す）。V19.5で未送信キュー経由に変更。
@@ -1203,7 +1220,7 @@
       section
     };
     outboxPut(entry);
-    trySend(entry);
+    flushOutbox();
   }
 
   function saveRecords() {
@@ -1845,14 +1862,19 @@
   updateTable();
   restoreActive();
 
-  // ---- V19.5：再送のきっかけ（どれか1つでも拾えれば記録は復活する）----
-  flushOutbox();
-  // Firebaseが「つながった」と判断した瞬間。回線復帰の検知としてはこれが一番あてになる
+  // ---- V19.7：isConnectedの更新＋再送のきっかけ（どれか1つでも拾えれば記録は復活する）----
+  // Firebaseが「つながった/切れた」と判断した瞬間。これが一番あてになる基準（true/falseどちらも拾う）
   if (db) {
-    try { db.ref('.info/connected').on('value', (s) => { if (s.val()) flushOutbox(); }); } catch (e) {}
+    try {
+      db.ref('.info/connected').on('value', (s) => {
+        isConnected = !!s.val();
+        if (isConnected) flushOutbox();
+      });
+    } catch (e) {}
   }
-  // 端末側のオンライン復帰イベント
-  window.addEventListener('online', flushOutbox);
+  // 端末側のオンライン/オフライン切り替え（Firebaseの判定が来る前の保険として即座に反映）
+  window.addEventListener('online', () => { isConnected = true; flushOutbox(); });
+  window.addEventListener('offline', () => { isConnected = false; });
   // アプリが裏から表に戻ってきたとき（スマホはここが実質の再開点になる）
   document.addEventListener('visibilitychange', () => { if (!document.hidden) flushOutbox(); });
   // 上のどれも拾えなかった場合の保険
