@@ -659,7 +659,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.10</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.11</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -944,13 +944,16 @@
 
   // 未送信の件数表示と、区間チップ側の印を更新する
   function updateOutboxUi() {
+    // V19.10：「区間の状況」のバッジは区間計測（ログ・状況）専用に絞る。チャットの未送信は
+    // チャットバナー側の⚠️だけで知らせる（役割を分けて紛らわしさを減らす）。
     if (outboxBadge) {
-      if (outbox.length === 0) {
+      const sectionCount = outbox.filter(e => e.kind !== 'chat').length;
+      if (sectionCount === 0) {
         outboxBadge.hidden = true;
         outboxBadge.textContent = '';
       } else {
         outboxBadge.hidden = false;
-        outboxBadge.textContent = '⚠️ 未送信 ' + outbox.length + '件（タップで再送）';
+        outboxBadge.textContent = '⚠️ 未送信 ' + sectionCount + '件（タップで再送）';
       }
     }
     if (typeof renderSections === 'function') renderSections();
@@ -1510,11 +1513,19 @@
   }
 
   // Firebaseから届いた確定分(chatMessages)に、outboxにだけあるまだ未送信の分をマージして
-  // 表示用の1本のリストにする。同じキーがchatMessages側に来たら送信成功＝pending扱いを外す。
+  // 表示用の1本のリストにする。
+  // ★V19.10改：pendingかどうかは「outboxにまだ残っているか」だけで判定する（バッジ類と同じ基準に統一）。
+  // Firebaseはローカルでは書き込みを先んじて反映してくれるため、chatMessages側には早々に
+  // 出てきてしまうが、それだけで「未送信」表示を消すとバッジ（サーバーに届いた確認待ち）と
+  // タイミングがズレる。→ 表示・バッジどちらも同じ「outboxに残っているか」で揃える。
   function mergedChatMessages() {
-    const pending = pendingChatEntries().filter(e => !chatMessages.some(m => m.key === e.chatKey));
-    const pendingAsMsg = pending.map(e => Object.assign({ key: e.chatKey, pending: true }, e.data));
-    return chatMessages.concat(pendingAsMsg).sort((a, b) => (a.key < b.key ? -1 : 1));
+    const pendingKeys = new Set(pendingChatEntries().map(e => e.chatKey));
+    const confirmed = chatMessages.map(m => pendingKeys.has(m.key) ? Object.assign({}, m, { pending: true }) : m);
+    // Firebase側の一覧にまだ出てきていない分（オフライン中に作ったばかり等）はoutboxから補って表示
+    const notYetListed = pendingChatEntries()
+      .filter(e => !chatMessages.some(m => m.key === e.chatKey))
+      .map(e => Object.assign({ key: e.chatKey, pending: true }, e.data));
+    return confirmed.concat(notYetListed).sort((a, b) => (a.key < b.key ? -1 : 1));
   }
 
   function renderChatBanner() {
