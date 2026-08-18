@@ -646,7 +646,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.8</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.9</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -873,6 +873,25 @@
     if (i >= 0) { outbox.splice(i, 1); saveOutbox(); updateOutboxUi(); }
   }
 
+  // ---- V19.9：送信に失敗した理由をこっそりFirebaseへ記録（メンバーには見えない・Claudianが確認する用）----
+  // 「回線は繋がってそうなのに未送信が出る」原因を探るため、失敗の中身だけ残す。
+  // これ自体が失敗しても無視する（デバッグ用の記録が本来の動作を邪魔しないように）。
+  function logSendFailure(entry, err) {
+    if (!db) return;
+    try {
+      db.ref('debugLog').push({
+        at: Date.now(),
+        clock: formatClock(new Date()),
+        name: getUserName() || '不明',
+        kind: entry.kind,
+        path: entry.path,
+        error: err ? String(err.message || err) : '不明なエラー',
+        online: navigator.onLine,
+        isConnected: isConnected
+      }).catch(() => {});
+    } catch (e) {}
+  }
+
   // 1件送る。成功したらキューから消す。失敗したら残す（次の機会に再送される）
   function trySend(entry) {
     if (!db || !entry) return Promise.resolve(false);
@@ -893,12 +912,12 @@
       }).then((result) => {
         outboxRemove(entry.id);
         return !!result.committed;
-      }).catch(() => false);
+      }).catch((err) => { logSendFailure(entry, err); return false; });
     }
     // logs＝pushで作ったキーに向けて書くので、何度送っても同じ場所に上書きされるだけ（重複しない）
     return db.ref(entry.path).set(entry.data)
       .then(() => { outboxRemove(entry.id); return true; })
-      .catch(() => false);
+      .catch((err) => { logSendFailure(entry, err); return false; });
   }
 
   function flushOutbox() {
