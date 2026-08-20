@@ -221,19 +221,64 @@
   /* V19.12：使っていない方のボタン（未計測中のストップ／計測中のスタート）を
      「長押しで再読み込み」に転用（タイトル長押し版から変更・iPhoneのPWAは下スワイプでの
      リロードが効かないため）。開始/停止と見分けやすいよう中立色にする */
-  .btn-reload { background: #4a7fb5; color: white; font-size: 14px; white-space: nowrap; }
-  .btn-reload.holding { opacity: 0.5; }
-  /* V19.12：未送信件数を2行目に添えるとき、縦幅は変えず1行分の高さに収める */
-  .btn-reload-2line {
+  .btn-reload {
+    position: relative;
+    overflow: hidden;
+    background: #2c3e52;
+    color: white;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  /* V19.12：他の長押しUI（記録クリア・全員リセット・区間チップ）と同じ「塗りつぶしが伸びる」
+     進捗表現に統一（当初はopacityで薄くするだけだったが、分かりにくいとの指摘で変更・2026-08-20） */
+  .reload-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 0;
+    background: #4a7fb5;
+    z-index: 0;
+  }
+  .btn-reload.holding .reload-fill {
+    width: 100%;
+    transition: width 1s linear;
+  }
+  .reload-label {
+    position: relative;
+    z-index: 1;
+  }
+  /* V19.12：未送信件数を2行目に添えるとき、縦幅は変えず1行分の高さに収める
+     （ボタン自体のpaddingを詰めて、2行分のテキストが元の1行ぶんの高さに収まるようにする） */
+  .btn-reload-2line { padding: 8px 0; }
+  .btn-reload-2line .reload-label {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 1px;
-    padding: 8px 0;
   }
   .btn-reload-main { font-size: 11px; line-height: 1.15; }
   .btn-reload-sub { font-size: 10px; line-height: 1.15; color: #ffd479; }
+  /* V19.12：リロードが実際に効いたことを一瞬だけ知らせるトースト（画面上部・自動で消える） */
+  .reload-toast {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translate(-50%, -10px);
+    background: #2c3e52;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 999px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 50;
+    pointer-events: none;
+  }
+  .reload-toast.show { opacity: 1; transform: translate(-50%, 0); }
   .records {
     margin-top: 16px;
     background: #171c22;
@@ -1487,6 +1532,7 @@
   // 増やさずに済む形にした）。「動いたら中止」の作法は他の長押しUIと同じだが、
   // リロードは早めに反応してほしいとのことで長さだけ1秒に短縮（他は1.4秒のまま・2026-08-20）。
   const RELOAD_HOLD_MS = 1000;
+  const RELOAD_TOAST_KEY = 'nespaPT_reloadToast';
   function setupReloadHold(btn) {
     let holdTimer = null;
     let startX = 0, startY = 0;
@@ -1498,6 +1544,10 @@
       holdTimer = setTimeout(() => {
         holdTimer = null;
         if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+        // ★リロード自体はPWAのキャッシュから一瞬で終わり、状態もJSが元通り復元するため、
+        // 「本当にリロードされたか」が目で見て分からない（2026-08-20・正人さんの指摘）。
+        // 次の起動時に確認トースト（RELOAD_TOAST_KEY）を出すための目印を残してから再読み込みする。
+        try { sessionStorage.setItem(RELOAD_TOAST_KEY, '1'); } catch (e) {}
         location.reload();
       }, RELOAD_HOLD_MS);
     };
@@ -1524,9 +1574,12 @@
   // （正人さんの依頼・2026-08-20＝見出し行のバッジが折り返してレイアウトが崩れる問題への対処）。
   function updateReloadButton() {
     const sectionCount = outbox.filter(e => e.kind !== 'chat').length;
-    const reloadHtml = sectionCount > 0
+    // .reload-fill＝長押し中に伸びる塗りつぶし（他の長押しUIと同じ表現）。.reload-label＝
+    // 塗りつぶしの上に乗る文字（z-indexで前面に固定）。
+    const labelInner = sectionCount > 0
       ? '<span class="btn-reload-main">🔄長押しで更新</span><span class="btn-reload-sub">未送信' + sectionCount + '件</span>'
       : '🔄長押しで更新';
+    const reloadHtml = '<span class="reload-fill"></span><span class="reload-label">' + labelInner + '</span>';
     if (running) {
       startBtn.innerHTML = reloadHtml;
       startBtn.classList.add('btn-reload');
@@ -2010,6 +2063,27 @@
   // restoreActive()が「復元する状態が無い」で早期returnした場合もボタン表示を正しく初期化する
   // （runningがtrueなら既にupdateReloadButton()済みだが、再度呼んでも副作用は無いので毎回呼ぶ）
   updateReloadButton();
+
+  // ---- V19.12：長押しリロードが本当に効いたかを一瞬だけ知らせる ----
+  // PWAはservice workerのキャッシュから一瞬で再読み込みされ、状態もJSがそっくり同じに
+  // 復元するため、リロードされたのかどうかが見た目では分からない（2026-08-20・正人さんの指摘）。
+  // ボタン側でsessionStorageに目印を置いてからreload()しているので、起動直後にそれを見つけたら
+  // 「🔄 更新しました」を一瞬出して消す。sessionStorageはタブを閉じるまでの間だけ・
+  // このタブ限定で残る値なので、普通に開いた時には何も出ない。
+  try {
+    if (sessionStorage.getItem(RELOAD_TOAST_KEY)) {
+      sessionStorage.removeItem(RELOAD_TOAST_KEY);
+      const toast = document.createElement('div');
+      toast.className = 'reload-toast';
+      toast.textContent = '🔄 更新しました';
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.classList.add('show'); }, 10);
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 1600);
+    }
+  } catch (e) {}
 
   // ---- V19.7：isConnectedの更新＋再送のきっかけ（どれか1つでも拾えれば記録は復活する）----
   // Firebaseが「つながった/切れた」と判断した瞬間。これが一番あてになる基準（true/falseどちらも拾う）
