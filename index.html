@@ -30,7 +30,13 @@
     color: #eaeef2;
     display: flex;
     justify-content: center;
-    padding: 24px 12px 60px;
+    /* V19.13：iPhoneのステータスバー/Dynamic Islandとタイトルが重なる不具合対策。
+       チャット画面（.chat-header）は2026-08-11に対策済みだったが、計測画面（body）側は
+       未対応のまま残っていた（2026-08-20・正人さんの指摘で発覚）。
+       max()でAndroid（env=0が普通）は元の24pxのまま変えず、iPhoneのノッチ/Dynamic Island分
+       だけ上乗せする。安全マージンに8pxだけ足すのは、env値ちょうどだと文字がステータスバーの
+       すぐ下に張り付いて見えるため */
+    padding: max(24px, calc(env(safe-area-inset-top) + 8px)) 12px 60px;
     transition: background 0.3s ease;
   }
   body.running {
@@ -701,7 +707,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.13</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.14</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
