@@ -213,6 +213,13 @@
     border-radius: 10px;
     cursor: pointer;
     transition: opacity 0.15s;
+    /* V19.12：長押し中にAndroid/iOSの「テキスト選択」メニューが出てしまうのを防ぐ
+       （他の長押しUI＝記録クリア等では最初から設定済みだったが、スタート/ストップには
+       付け忘れていた。指が少しズレただけでコピー選択が出てしまう不具合の原因・2026-08-20） */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
   }
   button:active { opacity: 0.7; }
   button:disabled { opacity: 0.35; cursor: default; }
@@ -260,25 +267,9 @@
   }
   .btn-reload-main { font-size: 11px; line-height: 1.15; }
   .btn-reload-sub { font-size: 10px; line-height: 1.15; color: #ffd479; }
-  /* V19.12：リロードが実際に効いたことを一瞬だけ知らせるトースト（画面上部・自動で消える） */
-  .reload-toast {
-    position: fixed;
-    top: 14px;
-    left: 50%;
-    transform: translate(-50%, -10px);
-    background: #2c3e52;
-    color: #fff;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 16px;
-    border-radius: 999px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
-    opacity: 0;
-    transition: opacity 0.25s ease, transform 0.25s ease;
-    z-index: 50;
-    pointer-events: none;
-  }
-  .reload-toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* V19.12：リロードが実際に効いたことを、画面上部のトーストではなく
+     ボタン自身の文字を一瞬置き換える形で知らせる（トーストは気づきにくいとの指摘・2026-08-20） */
+  .btn-reload-done { background: #2f9e6a; }
   .records {
     margin-top: 16px;
     background: #171c22;
@@ -1546,7 +1537,8 @@
         if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
         // ★リロード自体はPWAのキャッシュから一瞬で終わり、状態もJSが元通り復元するため、
         // 「本当にリロードされたか」が目で見て分からない（2026-08-20・正人さんの指摘）。
-        // 次の起動時に確認トースト（RELOAD_TOAST_KEY）を出すための目印を残してから再読み込みする。
+        // 次の起動時にこのボタンの文字を一瞬「✅更新しました」に変えるための目印を残してから
+        // 再読み込みする（RELOAD_TOAST_KEY）。
         try { sessionStorage.setItem(RELOAD_TOAST_KEY, '1'); } catch (e) {}
         location.reload();
       }, RELOAD_HOLD_MS);
@@ -2068,20 +2060,22 @@
   // PWAはservice workerのキャッシュから一瞬で再読み込みされ、状態もJSがそっくり同じに
   // 復元するため、リロードされたのかどうかが見た目では分からない（2026-08-20・正人さんの指摘）。
   // ボタン側でsessionStorageに目印を置いてからreload()しているので、起動直後にそれを見つけたら
-  // 「🔄 更新しました」を一瞬出して消す。sessionStorageはタブを閉じるまでの間だけ・
-  // このタブ限定で残る値なので、普通に開いた時には何も出ない。
+  // ちょうど今しがた押していたボタン（＝リロード役だった方）の文字を「✅更新しました」に
+  // 一瞬置き換えてから、元の表示に戻す。画面上部のトーストは気づきにくいとの指摘で、
+  // 押した指の下＝ボタン自身で知らせる形に変更（2026-08-20）。
   try {
     if (sessionStorage.getItem(RELOAD_TOAST_KEY)) {
       sessionStorage.removeItem(RELOAD_TOAST_KEY);
-      const toast = document.createElement('div');
-      toast.className = 'reload-toast';
-      toast.textContent = '🔄 更新しました';
-      document.body.appendChild(toast);
-      setTimeout(() => { toast.classList.add('show'); }, 10);
+      // リロード直前はrunningの値で「どっちがリロードボタンだったか」が決まる。
+      // その値は再読み込み後も同じ状態（restoreActiveで復元／もしくは元々idle）なので、
+      // 今のrunningを見れば「さっき押したのはこっち」が分かる。
+      const doneBtn = running ? startBtn : stopBtn;
+      doneBtn.classList.add('btn-reload-done');
+      doneBtn.innerHTML = '<span class="reload-label">✅更新しました</span>';
       setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
-      }, 1600);
+        doneBtn.classList.remove('btn-reload-done');
+        updateReloadButton();
+      }, 1500);
     }
   } catch (e) {}
 
