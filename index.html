@@ -218,6 +218,22 @@
   button:disabled { opacity: 0.35; cursor: default; }
   .btn-start { background: #2f9e6a; color: white; }
   .btn-stop { background: #d9534f; color: white; }
+  /* V19.12：使っていない方のボタン（未計測中のストップ／計測中のスタート）を
+     「長押しで再読み込み」に転用（タイトル長押し版から変更・iPhoneのPWAは下スワイプでの
+     リロードが効かないため）。開始/停止と見分けやすいよう中立色にする */
+  .btn-reload { background: #4a7fb5; color: white; font-size: 14px; white-space: nowrap; }
+  .btn-reload.holding { opacity: 0.5; }
+  /* V19.12：未送信件数を2行目に添えるとき、縦幅は変えず1行分の高さに収める */
+  .btn-reload-2line {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    padding: 8px 0;
+  }
+  .btn-reload-main { font-size: 11px; line-height: 1.15; }
+  .btn-reload-sub { font-size: 10px; line-height: 1.15; color: #ffd479; }
   .records {
     margin-top: 16px;
     background: #171c22;
@@ -319,16 +335,6 @@
     color: #8fa0b3;
     margin-bottom: 12px;
   }
-  /* V19.5：まだFirebaseに送れていない記録の件数。合計時間と同じ黄色＝「まだ終わっていない」を表す。
-     行を増やさず「区間の状況」の見出し行の右端に置く（縦スペースを縮めない方針・2026-08-11） */
-  .outbox-badge {
-    color: #ffd479;
-    font-size: 12px;
-    cursor: pointer;
-    white-space: nowrap;
-    margin-left: 8px;
-  }
-  .outbox-badge[hidden] { display: none; }
   /* 自分がストップしたのに送信できていない区間＝他の人からは「計測中」のまま固まって見える区間 */
   .chip.pending {
     border-color: #ffd479;
@@ -659,7 +665,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.11</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.12</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -713,7 +719,6 @@
   <div class="section-status">
     <div class="section-status-header">
       <span>区間の状況（緑＝計測中　赤＝完了・注文なし）</span>
-      <span class="outbox-badge" id="outboxBadge" role="button" tabindex="0" hidden></span>
     </div>
     <div class="chips" id="sectionList"></div>
     <div class="section-hint">区間を長押し→「注文なし」に<br>赤を長押し→取消（完了は記録も削除）</div>
@@ -855,7 +860,6 @@
   //   status（区間の共有状態）＝「今どうなっているか」の情報。時間が経ってから送ると、その間に別の人が
   //   始めた計測を消してしまう。だから古くなったら送るのを諦める。
   const STATUS_STALE_MS = 10 * 60 * 1000;
-  const outboxBadge = document.getElementById('outboxBadge');
   let outbox = [];
   // ★V19.7で追加＝「今オンラインだと確実に分かっているか」の自前フラグ。
   // .set()は呼んだ瞬間にFirebase自身がその配達を引き受けてしまい、オフライン中に呼んでも
@@ -944,18 +948,12 @@
 
   // 未送信の件数表示と、区間チップ側の印を更新する
   function updateOutboxUi() {
-    // V19.10：「区間の状況」のバッジは区間計測（ログ・状況）専用に絞る。チャットの未送信は
+    // V19.10：未送信件数の表示は区間計測（ログ・状況）専用に絞る。チャットの未送信は
     // チャットバナー側の⚠️だけで知らせる（役割を分けて紛らわしさを減らす）。
-    if (outboxBadge) {
-      const sectionCount = outbox.filter(e => e.kind !== 'chat').length;
-      if (sectionCount === 0) {
-        outboxBadge.hidden = true;
-        outboxBadge.textContent = '';
-      } else {
-        outboxBadge.hidden = false;
-        outboxBadge.textContent = '⚠️ 未送信 ' + sectionCount + '件（タップで再送）';
-      }
-    }
+    // V19.12：「区間の状況」見出し行に置いていた専用バッジは、見出しのテキストが長い端末で
+    // 2行に折り返されレイアウトが崩れる問題があったため廃止。件数はリロードボタンの2行目に統合し、
+    // タップでの手動再送も廃止（再送はrecheckConnection()の自動リトライに一本化・2026-08-20）。
+    if (typeof updateReloadButton === 'function') updateReloadButton();
     if (typeof renderSections === 'function') renderSections();
     // V19.10：チャットの未送信バッジ・吹き出し側の表示もここで一緒に更新する
     if (typeof renderChatBanner === 'function') renderChatBanner();
@@ -1373,6 +1371,9 @@
   }
 
   startBtn.addEventListener('click', () => {
+    // 計測中はこのボタンは「長押しでリロード」役に転用されている（V19.12）。
+    // 通常のクリック（＝長押しに至らなかったタップ）では何もしない
+    if (running) return;
     // 共有の区間の状況をもとに、完了済み／計測中の区間なら確認する（V12）
     const selectedSection = sectionSelect.value;
     const selInfo = sharedStatus[fbKey(selectedSection)];
@@ -1393,8 +1394,7 @@
     currentSection = sectionSelect.value;
     sectionSelect.disabled = true;
     userNameEl.disabled = true;
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
+    updateReloadButton();
     clearBtn.disabled = true;
     status.textContent = '計測中';
     status.classList.remove('idle');
@@ -1406,6 +1406,8 @@
   });
 
   stopBtn.addEventListener('click', () => {
+    // 計測前はこのボタンは「長押しでリロード」役に転用されている（V19.12）。
+    // running===falseのときは元々このreturnで弾かれる＝通常のクリックでは何もしない
     if (!running) return;
     running = false;
     clearActive();
@@ -1429,8 +1431,7 @@
     status.classList.add('idle');
     sectionSelect.disabled = false;
     userNameEl.disabled = false;
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+    updateReloadButton();
     clearBtn.disabled = false;
     writeStatus(currentSection, 'done', endTime);
     updateTable();
@@ -1478,6 +1479,70 @@
   window.addEventListener('scroll', cancelClearHold, { passive: true });
   // クリックそのものでは何も起こさない（保険）
   clearBtn.addEventListener('click', (e) => { e.preventDefault(); });
+
+  // ---- V19.12：使っていない方のスタート/ストップボタンを「長押しでリロード」に転用 ----
+  // きっかけ＝iPhoneのPWA（ホーム画面起動）は下スワイプでのリロードが効かないため。
+  // 計測前はストップ側が、計測中はスタート側がどうせ使われていないので、そこをリロードに変える
+  // （正人さんの発案・2026-08-20。将来的にタイトルを無くすレイアウトも見据えて、専用のヒント表示を
+  // 増やさずに済む形にした）。「動いたら中止」の作法は他の長押しUIと同じだが、
+  // リロードは早めに反応してほしいとのことで長さだけ1秒に短縮（他は1.4秒のまま・2026-08-20）。
+  const RELOAD_HOLD_MS = 1000;
+  function setupReloadHold(btn) {
+    let holdTimer = null;
+    let startX = 0, startY = 0;
+    const start = (e) => {
+      if (!btn.classList.contains('btn-reload') || holdTimer) return;
+      startX = e ? e.clientX : 0;
+      startY = e ? e.clientY : 0;
+      btn.classList.add('holding');
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+        location.reload();
+      }, RELOAD_HOLD_MS);
+    };
+    const cancel = () => {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+      btn.classList.remove('holding');
+    };
+    const onMove = (e) => {
+      if (!holdTimer) return;
+      if (Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8) cancel();
+    };
+    btn.addEventListener('pointerdown', start);
+    btn.addEventListener('pointermove', onMove);
+    btn.addEventListener('pointerup', cancel);
+    btn.addEventListener('pointerleave', cancel);
+    btn.addEventListener('pointercancel', cancel);
+    window.addEventListener('scroll', cancel, { passive: true });
+  }
+  setupReloadHold(startBtn);
+  setupReloadHold(stopBtn);
+
+  // 計測中かどうかに応じて、使っていない方を「🔄再読み込み」表示に切り替える。
+  // V19.12：未送信件数（旧・区間の状況バッジ）もここに統合し、あれば2行目に添える
+  // （正人さんの依頼・2026-08-20＝見出し行のバッジが折り返してレイアウトが崩れる問題への対処）。
+  function updateReloadButton() {
+    const sectionCount = outbox.filter(e => e.kind !== 'chat').length;
+    const reloadHtml = sectionCount > 0
+      ? '<span class="btn-reload-main">🔄長押しで更新</span><span class="btn-reload-sub">未送信' + sectionCount + '件</span>'
+      : '🔄長押しで更新';
+    if (running) {
+      startBtn.innerHTML = reloadHtml;
+      startBtn.classList.add('btn-reload');
+      startBtn.classList.toggle('btn-reload-2line', sectionCount > 0);
+      startBtn.disabled = false;
+      stopBtn.textContent = 'ストップ';
+      stopBtn.classList.remove('btn-reload', 'btn-reload-2line');
+    } else {
+      stopBtn.innerHTML = reloadHtml;
+      stopBtn.classList.add('btn-reload');
+      stopBtn.classList.toggle('btn-reload-2line', sectionCount > 0);
+      stopBtn.disabled = false;
+      startBtn.textContent = 'スタート';
+      startBtn.classList.remove('btn-reload', 'btn-reload-2line');
+    }
+  }
 
   // ---- V18：メンバー間のコメント（チャット）----
   // データは messages/{自動ID} にフラットに保存（push key が時系列順に文字列比較できるので
@@ -1924,8 +1989,7 @@
 
     sectionSelect.disabled = true;
     userNameEl.disabled = true;
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
+    updateReloadButton();
     clearBtn.disabled = true;
     status.textContent = '計測中';
     status.classList.remove('idle');
@@ -1943,6 +2007,9 @@
   updateOutboxUi();
   updateTable();
   restoreActive();
+  // restoreActive()が「復元する状態が無い」で早期returnした場合もボタン表示を正しく初期化する
+  // （runningがtrueなら既にupdateReloadButton()済みだが、再度呼んでも副作用は無いので毎回呼ぶ）
+  updateReloadButton();
 
   // ---- V19.7：isConnectedの更新＋再送のきっかけ（どれか1つでも拾えれば記録は復活する）----
   // Firebaseが「つながった/切れた」と判断した瞬間。これが一番あてになる基準（true/falseどちらも拾う）
@@ -1957,25 +2024,43 @@
   // 端末側のオンライン/オフライン切り替え（Firebaseの判定が来る前の保険として即座に反映）
   window.addEventListener('online', () => { isConnected = true; flushOutbox(); });
   window.addEventListener('offline', () => { isConnected = false; });
-  // アプリが裏から表に戻ってきたとき（スマホはここが実質の再開点になる）
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) flushOutbox(); });
-  // 上のどれも拾えなかった場合の保険
-  setInterval(flushOutbox, 30000);
 
-  // 未送信バッジをタップしたら、その場でもう一度送ってみる
-  if (outboxBadge) {
-    const manualFlush = () => {
-      if (outbox.length === 0) return;
-      flushOutbox();
-      // 送信は非同期なので、少し待ってから結果を見て伝える
-      setTimeout(() => {
-        if (outbox.length === 0) alert('未送信の記録をすべて送信しました。');
-        else alert('まだ ' + outbox.length + '件 送信できていません。電波が届く場所でもう一度お試しください。');
-      }, 1500);
-    };
-    outboxBadge.addEventListener('click', manualFlush);
-    outboxBadge.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); manualFlush(); } });
+  // ---- V19.12：isConnectedが「取りこぼしたまま固まる」問題への自己修復 ----
+  // きっかけ＝2026-08-18、回線は正常なのに未送信バッジが開始直後からしばらく消えず、
+  // リロードすると即消えるという報告。原因の直接確認（debugLog）はルール未設定で
+  // 記録が取れていなかったため今回ルールを直したが、コード上は「isConnectedを更新する
+  // きっかけ（online/offlineイベント・.info/connectedの通知）を一度も拾えなかった場合、
+  // 30秒ごとの保険もisConnectedを見て止まってしまい、フラグがfalseに固まったまま
+  // 誰も気づけない」という弱点があった。リロードで直るのは、起動時に
+  // isConnected=navigator.onLineへ作り直されるため。
+  // → 受け身で通知を待つだけでなく、navigator.onLineを直接見て食い違っていたら
+  //   その場で補正する「能動的な再チェック」を追加する。
+  function recheckConnection() {
+    // ブラウザが「オンライン」だと言っているのにisConnectedがfalseのまま＝取りこぼし濃厚。
+    // その場で補正して再送を試みる（実際にオフラインならこの後の送信自体が失敗し、
+    // .info/connectedやofflineイベントが追って正しい状態に直してくれる）。
+    if (navigator.onLine && !isConnected) isConnected = true;
+    if (db) {
+      try {
+        db.ref('.info/connected').once('value').then((s) => {
+          isConnected = !!s.val();
+          flushOutbox();
+        }).catch(() => { flushOutbox(); });
+        return;
+      } catch (e) {}
+    }
+    flushOutbox();
   }
+  // アプリが裏から表に戻ってきたとき（スマホはここが実質の再開点になる）
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) recheckConnection(); });
+  // 上のどれも拾えなかった場合の保険。渡す関数もrecheckConnectionにして、
+  // 「isConnectedを信じてflushOutboxを呼ぶだけ」から「isConnected自体を都度疑って直す」に変更
+  // 呼ぶ内容が軽い（未送信が無ければ即終了・.info/connectedの読み取りも軽量）ため、
+  // 固まってから気づくまでの最大待ち時間を縮めるべく30秒→15秒に短縮（2026-08-20・正人さんの依頼）
+  setInterval(recheckConnection, 15000);
+
+  // V19.12：タップでの手動再送は廃止（正人さんの依頼・2026-08-20）。
+  // 未送信件数の表示はリロードボタンに統合し、再送はrecheckConnection()の自動リトライに一本化した。
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
