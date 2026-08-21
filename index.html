@@ -276,6 +276,9 @@
   /* V19.12：リロードが実際に効いたことを、画面上部のトーストではなく
      ボタン自身の文字を一瞬置き換える形で知らせる（トーストは気づきにくいとの指摘・2026-08-20） */
   .btn-reload-done { background: #2f9e6a; }
+  /* V19.15：オフライン中に長押ししたときは、reload()を呼ばずボタン自身でその場に知らせる
+     （回線が無いままreload()すると、PWAがERR_FAILEDの白画面になりアプリごと開き直す羽目になっていたため） */
+  .btn-reload-offline { background: #6b5b1f; }
   .records {
     margin-top: 16px;
     background: #171c22;
@@ -707,7 +710,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.14</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.15</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -1540,6 +1543,21 @@
       btn.classList.add('holding');
       holdTimer = setTimeout(() => {
         holdTimer = null;
+        // ★V19.15：オフライン中にreload()すると、キャッシュ経由でも読み込みに失敗しERR_FAILEDの
+        // 真っ白画面になり、アプリごと開き直す羽目になる不具合が発生（2026-08-21・正人さんの実機報告）。
+        // 「回線が繋がっているときだけ実際にリロードする」に変更し、オフラインならボタン上に
+        // その場でメッセージを出すだけにして、reload()自体を呼ばないようにする。
+        if (!navigator.onLine) {
+          if (navigator.vibrate) { try { navigator.vibrate([30, 60, 30]); } catch (e) {} }
+          btn.classList.add('btn-reload-offline');
+          const label = btn.querySelector('.reload-label');
+          if (label) label.innerHTML = '📵オフラインです<br><span class="btn-reload-sub">つながったら再度お試しください</span>';
+          setTimeout(() => {
+            btn.classList.remove('btn-reload-offline');
+            updateReloadButton();
+          }, 1800);
+          return;
+        }
         if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
         // ★リロード自体はPWAのキャッシュから一瞬で終わり、状態もJSが元通り復元するため、
         // 「本当にリロードされたか」が目で見て分からない（2026-08-20・正人さんの指摘）。

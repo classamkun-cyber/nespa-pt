@@ -1,4 +1,4 @@
-const CACHE = 'nespaPT-v19.14';
+const CACHE = 'nespaPT-v19.15';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.png', './icon-192.png', './icon-180.png'];
 
 self.addEventListener('install', (e) => {
@@ -19,7 +19,14 @@ self.addEventListener('fetch', (e) => {
   // 同一オリジンのGETだけキャッシュ対象。Firebase等の外部通信はそのままネットワークへ。
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    caches.match(e.request).then((r) => r || fetch(e.request))
+    caches.match(e.request).then((r) => {
+      if (r) return r;
+      // V19.15：ここでキャッシュに無く、かつオフラインでfetch自体が失敗すると、
+      // 受け皿が無いままrespondWith()が拒否されてERR_FAILEDの真っ白画面になっていた
+      // （2026-08-21・リロードボタンをオフライン中に押した実機報告で発覚）。
+      // 最後の砦としてindex.htmlのキャッシュを返し、オフラインでも必ず何かしら表示されるようにする。
+      return fetch(e.request).catch(() => caches.match('./index.html'));
+    })
   );
 });
 
