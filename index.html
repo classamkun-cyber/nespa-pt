@@ -710,7 +710,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.15</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.19.16</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -1550,11 +1550,15 @@
         if (!navigator.onLine) {
           if (navigator.vibrate) { try { navigator.vibrate([30, 60, 30]); } catch (e) {} }
           btn.classList.add('btn-reload-offline');
+          // ★オフラインの案内は常に2行になるため、未送信0件（＝1行モードのまま）だと
+          // ボタンの縦幅がその瞬間だけ伸びてしまう不具合が発生（2026-08-21・正人さんの実機報告）。
+          // 未送信件数に関係なく、表示中だけ強制的に2行モード（詰めた余白）にする。
+          btn.classList.add('btn-reload-2line');
           const label = btn.querySelector('.reload-label');
           if (label) label.innerHTML = '📵オフラインです<br><span class="btn-reload-sub">つながったら再度お試しください</span>';
           setTimeout(() => {
             btn.classList.remove('btn-reload-offline');
-            updateReloadButton();
+            updateReloadButton(); // 2line判定も未送信件数に応じて元通りに再計算される
           }, 1800);
           return;
         }
