@@ -127,6 +127,33 @@
     line-height: 1;
     visibility: hidden;
   }
+  /* V20.0：選択中の区間をアイコンで視覚的に示す。
+     グロサリ①②③・デイリー①②③は見た目がそっくりな文字ラベルの見間違いが実際に発生したため、
+     「商品アイコン＋番号キャップ」で区別できるようにした。それ以外の区間は代表アイコン2つを
+     並べて、グロサリ・デイリー側（アイコン＋番号）と横幅の見た目を揃える（正人さん案・2026-08-22）。
+     フリーはアイコンなし。
+     ★表示位置＝カート🛒アニメーションと全く同じ場所（.cart-lane内・top:50%/left:0の絶対配置）に
+     重ねて置く。display-rowの新しいflex子要素として追加すると、停止中の「status」「経過時間」の
+     位置が元のレイアウトからズレてしまう不具合が出たための修正（正人さんの指摘・2026-08-22）。
+     計測中はbody.runningでこちらを隠し、カート側（.cart.active）に切り替わる。 */
+  .section-icon {
+    position: absolute;
+    top: 50%;
+    /* 計測時間に近すぎたため、カート🛒の可動域（left:0）ではなく余白の中央あたりに寄せる（正人さんの指摘） */
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    line-height: 1;
+  }
+  body.running .section-icon { visibility: hidden; }
+  /* アイコン本体と番号キャップの見た目の大きさが揃うように統一（52pxと34pxの平均から、さらに少し縮小・正人さんの指摘） */
+  .section-icon .sec-icon-glyph,
+  .section-icon .sec-icon-num {
+    font-size: 36px;
+    line-height: 1;
+  }
   /* 行き1.4秒（空なので速い）＋右端で1.0秒停止（3個積み込む）＋帰り2.4秒（積んでいるのでゆっくり）
      ＝1サイクル4.8秒。行きと帰りで約1.7倍の速度差。「計測中」の明滅も同じ4.8秒で同期（V16.1） */
   .cart.active {
@@ -710,7 +737,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.19.16</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.20.0</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -754,6 +781,7 @@
     <span class="status idle" id="status">停止中</span>
     <span class="display" id="display">0分</span>
     <span class="cart-lane">
+      <span class="section-icon" id="sectionIcon"></span>
       <span class="cart" id="cart"><span class="load load1" id="cartLoad1">🍎</span><span class="load load2" id="cartLoad2">🥬</span><span class="load load3" id="cartLoad3">🐟</span><span class="glyph">🛒</span></span>
     </span>
   </div>
@@ -856,6 +884,36 @@
   const sectionListEl = document.getElementById('sectionList');
   const userNameEl = document.getElementById('userName');
   const resetAllBtn = document.getElementById('resetAllBtn');
+  const sectionIconEl = document.getElementById('sectionIcon');
+
+  // ---- V20.0：選択中の区間をアイコンで表示（グロサリ①②③・デイリー①②③の見間違い対策）----
+  // グロサリ・デイリーは実際の商品（菓子/飲料/調味料、豆腐/牛乳/アイス）でアイコンを分け、
+  // 番号キャップ（1️⃣2️⃣3️⃣）も添えて二重に判別できるようにする。それ以外の区間は代表アイコン2つを
+  // 並べて横幅の見た目を揃える（正人さん案）。フリーはアイコンなし。
+  const SECTION_ICONS = {
+    '農産': ['🥬', '🍎'],
+    '水産・畜産': ['🐟', '🥩'],
+    'デリカ': ['🍙', '🍱'],
+    'グロサリ①': ['🍘', '①'],
+    'グロサリ②': ['🍹', '②'],
+    'グロサリ③': ['🧂', '③'],
+    'デイリー①': ['🍥', '①'],
+    'デイリー②': ['🥛', '②'],
+    'デイリー③': ['🍧', '③'],
+    'デリコン': ['🧻', '🧴'],
+    'リカー': ['🍺', '🍷'],
+    'ケース': ['📦', '📦'],
+    'その他': ['💊', '💐'],
+    '衣料・住余': ['👕', '🧦'],
+    // フリーはアイコンなし（キーを持たせず、下のupdateSectionIcon()で空表示になる）
+  };
+  function updateSectionIcon() {
+    if (!sectionIconEl) return;
+    const pair = SECTION_ICONS[sectionSelect.value];
+    if (!pair) { sectionIconEl.innerHTML = ''; return; }
+    sectionIconEl.innerHTML =
+      `<span class="sec-icon-glyph">${pair[0]}</span><span class="sec-icon-num">${pair[1]}</span>`;
+  }
 
   // 前回選んだ名前を端末に覚えておき、次回起動時も自動で選択する（触らないと先頭の「平野」になってしまい、
   // 通知トークンの名前とズレる事故につながっていたため。2026-08-12）
@@ -1108,9 +1166,10 @@
     if (running) return;  // 計測中は区間を変えない（プルダウンも無効中）
     sectionSelect.value = section;
     renderSections();
+    updateSectionIcon();
     if (navigator.vibrate) { try { navigator.vibrate(10); } catch (e) {} }
   }
-  sectionSelect.addEventListener('change', renderSections);
+  sectionSelect.addEventListener('change', () => { renderSections(); updateSectionIcon(); });
 
   function chipStateOf(section) {
     const info = sharedStatus[fbKey(section)];
@@ -2059,6 +2118,7 @@
     currentSection = s.section;
     if (s.name) userNameEl.value = s.name;
     sectionSelect.value = s.section;
+    updateSectionIcon();
 
     sectionSelect.disabled = true;
     userNameEl.disabled = true;
@@ -2079,6 +2139,7 @@
   loadOutbox();
   updateOutboxUi();
   updateTable();
+  updateSectionIcon(); // 起動時点の選択中区間（プルダウンの先頭など）のアイコンを表示（V20.0）
   restoreActive();
   // restoreActive()が「復元する状態が無い」で早期returnした場合もボタン表示を正しく初期化する
   // （runningがtrueなら既にupdateReloadButton()済みだが、再度呼んでも副作用は無いので毎回呼ぶ）
