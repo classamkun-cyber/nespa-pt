@@ -21,6 +21,10 @@
   html {
     background: #101418;
     height: 100%;
+    /* V20.1：チャット入力欄（名前・区間・定型文・自由入力）付近をスワイプすると、裏のbodyが
+       わずかに引っ張られて上下に動くラバーバンド（跳ね返り）スクロールが出ていたための対策
+       （正人さんの実機報告・2026-08-25）。ページ自体の伸び縮みを止める。 */
+    overscroll-behavior: none;
   }
   body {
     margin: 0;
@@ -30,6 +34,7 @@
     color: #eaeef2;
     display: flex;
     justify-content: center;
+    overscroll-behavior: none;
     /* V19.13：iPhoneのステータスバー/Dynamic Islandとタイトルが重なる不具合対策。
        チャット画面（.chat-header）は2026-08-11に対策済みだったが、計測画面（body）側は
        未対応のまま残っていた（2026-08-20・正人さんの指摘で発覚）。
@@ -566,6 +571,11 @@
     color: #ffd479;
     margin-top: 2px;
   }
+  /* V20.1：未送信の長押し操作が「取消」→「リロード」に変わったので、その場で説明を添える */
+  .chat-msg-pending-hint {
+    color: #8fa0b3;
+    margin-left: 4px;
+  }
   .chat-overlay {
     position: fixed;
     inset: 0;
@@ -573,6 +583,7 @@
     z-index: 30;
     display: flex;
     flex-direction: column;
+    overscroll-behavior: none;
   }
   .chat-overlay[hidden] { display: none; }
   .chat-header {
@@ -627,6 +638,7 @@
   .chat-messages {
     flex: 1;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 16px;
     display: flex;
     flex-direction: column;
@@ -722,9 +734,12 @@
   .chat-input-row input[type="text"] {
     margin-bottom: 0;
   }
-  /* 宛先（左）:定型文（右） */
-  #chatToSelect { flex: 4 1 0; }
-  #chatPresetSelect { flex: 6 1 0; }
+  /* 宛先：区間（V20.1で追加）：定型文 の3並び。
+     宛先＝「小松原」、区間＝「水産・畜産」がちょうど収まる幅に固定し、
+     残りを定型文が伸縮して埋める（正人さんの依頼・2026-08-25＝区間の文字が見切れていた対策） */
+  #chatToSelect { flex: 0 0 80px; width: 80px; padding-left: 8px; padding-right: 8px; }
+  #chatSectionSelect { flex: 0 0 110px; width: 110px; padding-left: 8px; padding-right: 8px; }
+  #chatPresetSelect { flex: 1 1 auto; min-width: 0; }
   #chatFreeInput { flex: 1 1 0; }
   #chatSendBtn {
     flex: none;
@@ -737,7 +752,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.20.0</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.20.1</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -844,8 +859,26 @@
         <option value="大野">大野</option>
         <option value="服部">服部</option>
       </select>
+      <select id="chatSectionSelect">
+        <option value="" selected>区間</option>
+        <option value="農産">農産</option>
+        <option value="水産・畜産">水産・畜産</option>
+        <option value="デリカ">デリカ</option>
+        <option value="グロサリ①">グロサリ①</option>
+        <option value="グロサリ②">グロサリ②</option>
+        <option value="グロサリ③">グロサリ③</option>
+        <option value="デイリー①">デイリー①</option>
+        <option value="デイリー②">デイリー②</option>
+        <option value="デイリー③">デイリー③</option>
+        <option value="デリコン">デリコン</option>
+        <option value="リカー">リカー</option>
+        <option value="ケース">ケース</option>
+        <option value="その他">その他</option>
+        <option value="衣料・住余">衣料・住余</option>
+        <option value="フリー">フリー</option>
+      </select>
       <select id="chatPresetSelect">
-        <option value="" selected>定型文を選ぶ▼</option>
+        <option value="" selected>定型文を選ぶ</option>
       </select>
     </div>
     <div class="chat-input-row">
@@ -1688,6 +1721,7 @@
   const chatMessagesEl = document.getElementById('chatMessages');
   const chatEmptyEl = document.getElementById('chatEmpty');
   const chatToSelect = document.getElementById('chatToSelect');
+  const chatSectionSelect = document.getElementById('chatSectionSelect');
   const chatPresetSelect = document.getElementById('chatPresetSelect');
   const chatFreeInput = document.getElementById('chatFreeInput');
   const chatSendBtn = document.getElementById('chatSendBtn');
@@ -1764,7 +1798,7 @@
       // 未送信中は既読バッジと同じ位置に「未送信」を表示（V19.10）。既読は送信が確定してから初めて付くもの。
       const readers = m.readBy ? Object.keys(m.readBy).filter(n => n !== m.name) : [];
       const statusBadge = m.pending
-        ? `<div class="chat-msg-pending">⚠️ 未送信</div>`
+        ? `<div class="chat-msg-pending">⚠️ 未送信<span class="chat-msg-pending-hint">（長押しでリロードして再送信）</span></div>`
         : (readers.length ? `<div class="chat-msg-read">既読 ${readers.length}</div>` : '');
       html += `<div class="${cls}">
         <div class="chat-msg-meta">${escapeHtml(m.name || '?')} ${timeStr}${toTag}</div>
@@ -1783,18 +1817,29 @@
   let msgHoldStartX = 0;
   let msgHoldStartY = 0;
 
-  // まだ送れていないメッセージ（outboxに残っている）を長押しした場合は「送信取り消し」になる（V19.10）。
-  // 既に送れている場合は今までどおりFirebase側の記録を削除する。
+  // 送信済みのメッセージを長押しした場合は今までどおりFirebase側の記録を削除する。
+  // ★V20.1：未送信中（outboxに残っている）の長押しは「取消」ではなく「リロードして再送信」に変更
+  // （正人さんの依頼・2026-08-25＝計測画面の長押しリロードボタンと同じ考え方。リロードすれば
+  // 起動時のisConnectedチェック経由でoutboxの再送も自動的に試みられるため）。
   function deleteChatMessage(key) {
-    if (!key) return;
-    const pendingId = 'chat:' + key;
-    if (outboxGet(pendingId)) {
-      outboxRemove(pendingId);
-      if (chatOpen) renderChatMessages();
+    if (!key || !db) return;
+    try { db.ref('messages/' + key).remove(); } catch (e) {}
+  }
+  // 計測画面の setupReloadHold() と同じ「オフラインなら reload() 自体を呼ばず、一時的に案内を出す」
+  // 作法をチャットの吹き出しにも適用する（オフライン中の reload() は ERR_FAILED の原因になるため＝V19.15の教訓）。
+  function reloadForResend(bubble) {
+    const pendingEl = bubble.parentElement && bubble.parentElement.querySelector('.chat-msg-pending');
+    if (!navigator.onLine) {
+      if (navigator.vibrate) { try { navigator.vibrate([30, 60, 30]); } catch (e) {} }
+      if (pendingEl) {
+        const original = pendingEl.innerHTML;
+        pendingEl.innerHTML = '📵オフラインです<span class="chat-msg-pending-hint">再度お試しください</span>';
+        setTimeout(() => { if (pendingEl.isConnected) pendingEl.innerHTML = original; }, 1800);
+      }
       return;
     }
-    if (!db) return;
-    try { db.ref('messages/' + key).remove(); } catch (e) {}
+    if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+    location.reload();
   }
   function startMsgHold(e) {
     const bubble = e.target.closest('.chat-msg-bubble');
@@ -1806,8 +1851,13 @@
     msgHoldTimer = setTimeout(() => {
       msgHoldTimer = null;
       bubble.classList.remove('holding');
-      if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
-      deleteChatMessage(bubble.getAttribute('data-key'));
+      const key = bubble.getAttribute('data-key');
+      if (outboxGet('chat:' + key)) {
+        reloadForResend(bubble);
+      } else {
+        if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
+        deleteChatMessage(key);
+      }
       msgHoldEl = null;
     }, MSG_HOLD_MS);
   }
@@ -1866,7 +1916,7 @@
   // 表示順は order 昇順。プレースホルダー（先頭の「定型文を選ぶ▼」）は常に残す。
   function renderPresetOptions(list) {
     const current = chatPresetSelect.value;
-    const placeholder = '<option value="" selected>定型文を選ぶ▼</option>';
+    const placeholder = '<option value="" selected>定型文を選ぶ</option>';
     const opts = list
       .slice()
       .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -1941,30 +1991,45 @@
     if (chatOpen) renderChatMessages();
   }
 
+  // V20.1：区間（任意）を選んでいたら、メッセージの頭に【区間名】を付けて送る。
+  // 選んでいなければ今までどおり（正人さんの依頼・2026-08-25）。
+  function chatSectionPrefix() {
+    const sec = chatSectionSelect.value;
+    return sec ? '【' + sec + '】' : '';
+  }
+
   // 定型文プルダウン＝選んだ瞬間に即送信（2タップ完結）。
   // 同じ項目を連続で選んでも change が発火するよう、送信のたびに初期表示へ戻す。
   chatPresetSelect.addEventListener('change', () => {
     const text = chatPresetSelect.value;
     if (!text) return;
     const to = chatToSelect.value || '';
-    sendChatMessage(text, to);
+    sendChatMessage(chatSectionPrefix() + text, to);
     chatPresetSelect.value = '';
     chatToSelect.value = '';   // 宛先も毎回「全員」に戻す（正人さんの依頼・2026-08-10）
+    chatSectionSelect.value = ''; // 区間も毎回リセット（宛先と同じ考え方・V20.1）
   });
 
+  // ★区間だけ選んで本文が空のときは、タグだけのメッセージにならないよう prefix を付けない
+  function composeChatFreeText() {
+    const raw = chatFreeInput.value;
+    return raw.trim() ? chatSectionPrefix() + raw : raw;
+  }
   chatSendBtn.addEventListener('click', () => {
     const to = chatToSelect.value || '';
-    sendChatMessage(chatFreeInput.value, to);
+    sendChatMessage(composeChatFreeText(), to);
     chatFreeInput.value = '';
     chatToSelect.value = '';
+    chatSectionSelect.value = '';
   });
   chatFreeInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const to = chatToSelect.value || '';
-      sendChatMessage(chatFreeInput.value, to);
+      sendChatMessage(composeChatFreeText(), to);
       chatFreeInput.value = '';
       chatToSelect.value = '';
+      chatSectionSelect.value = '';
     }
   });
 
