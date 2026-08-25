@@ -752,7 +752,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.20.1</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.20.2</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -1730,6 +1730,10 @@
   let chatMessages = [];   // 古い順に並べて保持（[{key, text, name, to, time}, ...]）
   let chatOpen = false;
   const CHAT_READ_KEY = 'nespaPT_chatLastRead';
+  // V20.2：チャットの未送信メッセージを長押しリロードしたとき、計測画面に戻ってしまうと
+  // 「チャットを見ていたのに」となるため、リロード直前に目印を残しておき、起動時にチャットへ
+  // 自動で戻す（正人さんの実機報告・2026-08-25）。
+  const CHAT_REOPEN_KEY = 'nespaPT_chatReopen';
 
   function getChatLastRead() {
     try { return localStorage.getItem(CHAT_READ_KEY) || ''; } catch (e) { return ''; }
@@ -1839,6 +1843,8 @@
       return;
     }
     if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+    // チャット画面を開いた状態でリロードしたので、起動後もチャットへ戻す目印を残す
+    try { sessionStorage.setItem(CHAT_REOPEN_KEY, '1'); } catch (e) {}
     location.reload();
   }
   function startMsgHold(e) {
@@ -2230,6 +2236,15 @@
         doneBtn.classList.remove('btn-reload-done');
         updateReloadButton();
       }, 1500);
+    }
+  } catch (e) {}
+
+  // ---- V20.2：チャットの未送信メッセージを長押しリロードしたときは、起動後もチャット画面に戻す ----
+  // （正人さんの実機報告・2026-08-25＝そのまま計測画面に戻ってしまうと「チャットを見ていたのに」となる）。
+  try {
+    if (sessionStorage.getItem(CHAT_REOPEN_KEY)) {
+      sessionStorage.removeItem(CHAT_REOPEN_KEY);
+      openChat();
     }
   } catch (e) {}
 
