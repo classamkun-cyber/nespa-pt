@@ -159,6 +159,20 @@
     font-size: 36px;
     line-height: 1;
   }
+  /* V20.3：区間を選び直した瞬間だけ、2つのアイコンが少しタイミングをずらして上から
+     ポトポトと落ちてきて、着地時に少しポヨンとはねて止まる（正人さんの発案・2026-08-25）。
+     カートの商品が積まれる演出（V16.1・0.14秒ずつズラす「ポトッ、ポトッ」）と同じ考え方。
+     animation-fill-mode: backwards で、delay中は0%の状態（透明・上）のまま止めておく
+     ＝1個目が落ちきってから2個目が落ち始める、という段差が生まれる。 */
+  @keyframes iconDrop {
+    0%   { opacity: 0; transform: translateY(-22px); }
+    55%  { opacity: 1; transform: translateY(4px); animation-timing-function: ease-out; }
+    75%  { transform: translateY(-2px); }
+    90%  { transform: translateY(1px); }
+    100% { transform: translateY(0); }
+  }
+  .sec-icon-glyph.icon-drop { animation: iconDrop 0.5s ease-in backwards; }
+  .sec-icon-num.icon-drop { animation: iconDrop 0.5s ease-in 0.12s backwards; }
   /* 行き1.4秒（空なので速い）＋右端で1.0秒停止（3個積み込む）＋帰り2.4秒（積んでいるのでゆっくり）
      ＝1サイクル4.8秒。行きと帰りで約1.7倍の速度差。「計測中」の明滅も同じ4.8秒で同期（V16.1） */
   .cart.active {
@@ -752,7 +766,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.20.2</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.20.3</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -940,12 +954,16 @@
     '衣料・住余': ['👕', '🧦'],
     // フリーはアイコンなし（キーを持たせず、下のupdateSectionIcon()で空表示になる）
   };
-  function updateSectionIcon() {
+  // V20.3：animate=trueのときだけ、アイコンに「ポトポト落ちて着地でポヨン」のドロップ演出を付ける。
+  // 起動時の初期表示・計測復元（restoreActive）では付けず、ユーザーが実際に区間を選び直した
+  // 瞬間（チップタップ／プルダウン変更）だけ演出させる（正人さんの依頼・2026-08-25）。
+  function updateSectionIcon(animate) {
     if (!sectionIconEl) return;
     const pair = SECTION_ICONS[sectionSelect.value];
     if (!pair) { sectionIconEl.innerHTML = ''; return; }
+    const dropClass = animate ? ' icon-drop' : '';
     sectionIconEl.innerHTML =
-      `<span class="sec-icon-glyph">${pair[0]}</span><span class="sec-icon-num">${pair[1]}</span>`;
+      `<span class="sec-icon-glyph${dropClass}">${pair[0]}</span><span class="sec-icon-num${dropClass}">${pair[1]}</span>`;
   }
 
   // 前回選んだ名前を端末に覚えておき、次回起動時も自動で選択する（触らないと先頭の「平野」になってしまい、
@@ -1199,10 +1217,10 @@
     if (running) return;  // 計測中は区間を変えない（プルダウンも無効中）
     sectionSelect.value = section;
     renderSections();
-    updateSectionIcon();
+    updateSectionIcon(true);
     if (navigator.vibrate) { try { navigator.vibrate(10); } catch (e) {} }
   }
-  sectionSelect.addEventListener('change', () => { renderSections(); updateSectionIcon(); });
+  sectionSelect.addEventListener('change', () => { renderSections(); updateSectionIcon(true); });
 
   function chipStateOf(section) {
     const info = sharedStatus[fbKey(section)];
