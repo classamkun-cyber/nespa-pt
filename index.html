@@ -766,7 +766,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.21.0</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.21.1</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -1143,6 +1143,26 @@
       });
       if (firebase.messaging) {
         try { messaging = firebase.messaging(); } catch (e) { messaging = null; }
+      }
+      // ★V21.1：アプリを前面で開いている間に届いたpushは、sw.jsのonBackgroundMessageではなく
+      // ここ（ページ側）のonMessageに届く。この受け皿が無いと通知が静かに握りつぶされる
+      // （2026-08-27・ストップ忘れ防止通知V21.0を実機テストしたら、アプリを開いたまま待っていたため
+      //  通知が届かなかった不具合として発覚。sw.js側と同じ内容をshowNotification()で出す）。
+      if (messaging) {
+        try {
+          messaging.onMessage((payload) => {
+            const data = payload.data || {};
+            const title = data.title || 'Nespa-PT';
+            const body = data.body || '';
+            const link = data.link || './';
+            const icon = data.icon || './icon-192.png';
+            if (navigator.serviceWorker) {
+              navigator.serviceWorker.ready.then((reg) => {
+                reg.showNotification(title, { body, icon, badge: './icon-192.png', data: { url: link } });
+              });
+            }
+          });
+        } catch (e) { /* 対応してないブラウザ等ではここで静かに無視 */ }
       }
     }
   } catch (e) { db = null; }
