@@ -766,7 +766,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.20.3</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.21.0</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -1389,7 +1389,9 @@
       id: 'status:' + fbKey(section),
       kind: 'status',
       path,
-      data: { state, by: getUserName() || '誰か', at: formatClock(new Date(atMs)) },
+      // atMs：ストップ忘れ防止通知（Cloud Functions）が経過時間を判定するための生の時刻（ms）。
+      // 表示用の at（"HH:MM"）はそのまま維持し、追加のフィールドとして持たせるだけ（V21.0）。
+      data: { state, by: getUserName() || '誰か', at: formatClock(new Date(atMs)), atMs },
       at: Date.now(),
       section
     };
