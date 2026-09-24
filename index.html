@@ -766,7 +766,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>売場ピッキング区間計測<span class="ver">Ver.21.1</span></h1>
+  <h1>売場ピッキング区間計測<span class="ver">Ver.21.2</span></h1>
   <div class="field-row">
   <div class="field">
   <label for="userName">あなたの名前</label>
@@ -2046,14 +2046,19 @@
 
   // 定型文プルダウン＝選んだ瞬間に即送信（2タップ完結）。
   // 同じ項目を連続で選んでも change が発火するよう、送信のたびに初期表示へ戻す。
+  // V21.2：自由入力欄に書きかけの文字が残っていたら、その後ろに半角スペースを挟んで定型文を連結して送る。
+  // 自由文が空のときは今までどおり定型文だけを送る（正人さんの依頼・2026-09-24）。
   chatPresetSelect.addEventListener('change', () => {
     const text = chatPresetSelect.value;
     if (!text) return;
     const to = chatToSelect.value || '';
-    sendChatMessage(chatSectionPrefix() + text, to);
+    const free = chatFreeInput.value.trim();
+    const body = free ? (free + ' ' + text) : text;
+    sendChatMessage(chatSectionPrefix() + body, to);
     chatPresetSelect.value = '';
     chatToSelect.value = '';   // 宛先も毎回「全員」に戻す（正人さんの依頼・2026-08-10）
     chatSectionSelect.value = ''; // 区間も毎回リセット（宛先と同じ考え方・V20.1）
+    chatFreeInput.value = ''; // 自由文も定型文と一緒に送ったのでクリア（V21.2）
   });
 
   // ★区間だけ選んで本文が空のときは、タグだけのメッセージにならないよう prefix を付けない
